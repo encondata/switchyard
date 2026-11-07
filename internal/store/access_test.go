@@ -21,6 +21,10 @@ func TestParseRule(t *testing.T) {
 		"172.16.40.0/12":   "172.16.0.0/12",
 		"203.0.113.0/24":   "203.0.113.0/24",
 		"198.51.100.42/31": "198.51.100.42/31",
+		// IPv4-mapped IPv6 ranges become the IPv4 range they mean.
+		"::ffff:10.0.0.0/104":    "10.0.0.0/8",
+		"::ffff:192.168.1.9/120": "192.168.1.0/24",
+		"::ffff:10.1.2.3/128":    "10.1.2.3",
 	}
 	for in, want := range good {
 		got, err := ParseRule(in)
@@ -28,7 +32,7 @@ func TestParseRule(t *testing.T) {
 			t.Errorf("ParseRule(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"", "10.0.0.256", "10.0.0.0/33", "example.com", "US", "10.0.0.1-10.0.0.5"} {
+	for _, bad := range []string{"", "::ffff:0:0/80", "10.0.0.256", "10.0.0.0/33", "example.com", "US", "10.0.0.1-10.0.0.5"} {
 		if _, err := ParseRule(bad); err == nil {
 			t.Errorf("ParseRule(%q) accepted", bad)
 		}

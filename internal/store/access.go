@@ -71,6 +71,14 @@ func ParseRule(raw string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("%q is not a valid CIDR range", r)
 		}
+		if p.Addr().Is4In6() {
+			// ::ffff:a.b.c.d/n would never match an IPv4 client in Caddy;
+			// store the IPv4 range it means instead.
+			if p.Bits() < 96 {
+				return "", fmt.Errorf("%q mixes IPv6 and IPv4-mapped addresses; write the IPv4 range instead", r)
+			}
+			p = netip.PrefixFrom(p.Addr().Unmap(), p.Bits()-96)
+		}
 		p = p.Masked()
 		if p.Bits() == p.Addr().BitLen() {
 			return p.Addr().String(), nil
@@ -163,38 +171,28 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 		return Folder{}, errs
 	}
 
-	all, err := s.ListFolders(ctx)
-	if err != nil {
-		return Folder{}, err
-	}
-	parentOf := map[int64]*int64{}
 	var before *Folder
-	for i := range all {
-		parentOf[all[i].ID] = all[i].ParentID
-		if all[i].ID == f.ID {
-			before = &all[i]
+	if f.ID != 0 {
+		old, err := s.GetFolder(ctx, f.ID)
+		if err != nil {
+			return Folder{}, err
 		}
-	}
-	if f.ID != 0 && before == nil {
-		return Folder{}, ErrNotFound
-	}
-	if f.ParentID != nil {
-		if _, ok := parentOf[*f.ParentID]; !ok {
-			return Folder{}, ValidationError{"parent_id": "that folder doesn't exist"}
-		}
-		// Walk up from the new parent; meeting this folder means a cycle.
-		for p := f.ParentID; p != nil; p = parentOf[*p] {
-			if f.ID != 0 && *p == f.ID {
-				return Folder{}, ValidationError{"parent_id": "a folder can't be moved inside itself"}
-			}
-		}
+		before = &old
 	}
 
+	// Check the parent inside the write transaction: SQLite allows one writer
+	// at a time (and the pool has one connection), so no other move can slip
+	// in between this check and the update.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Folder{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if f.ParentID != nil {
+		if err := checkParent(ctx, tx, f.ID, *f.ParentID); err != nil {
+			return Folder{}, err
+		}
+	}
 	if err := checkRefs(ctx, tx, nil, f.PolicyIDs); err != nil {
 		return Folder{}, err
 	}
@@ -275,7 +273,7 @@ func (s *Store) SetFolderEnabled(ctx context.Context, id int64, enabled bool, us
 	defer func() { _ = tx.Rollback() }()
 	res, err := tx.ExecContext(ctx, `
 		WITH RECURSIVE tree(id) AS (
-			SELECT ? UNION ALL SELECT f.id FROM folders f JOIN tree ON f.parent_id = tree.id
+			SELECT ? UNION SELECT f.id FROM folders f JOIN tree ON f.parent_id = tree.id
 		)
 		UPDATE hosts SET enabled = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE folder_id IN (SELECT id FROM tree) AND enabled != ?`, id, enabled, enabled)
@@ -656,6 +654,45 @@ func setLinks(ctx context.Context, tx *sql.Tx, table, ownerCol string, ownerID i
 		if _, err := tx.ExecContext(ctx, `INSERT INTO `+table+` (`+ownerCol+`, policy_id) VALUES (?, ?)`, ownerID, pid); err != nil { //nolint:gosec // see above
 			return err
 		}
+	}
+	return nil
+}
+
+// checkParent fails if parentID doesn't exist, or if it is folderID itself
+// or one of its descendants (which would make a cycle). The walk stops at
+// any folder it has already seen, so existing bad data can't loop forever.
+func checkParent(ctx context.Context, tx *sql.Tx, folderID, parentID int64) error {
+	rows, err := tx.QueryContext(ctx, `SELECT id, parent_id FROM folders`)
+	if err != nil {
+		return err
+	}
+	parentOf := map[int64]*int64{}
+	for rows.Next() {
+		var id int64
+		var parent sql.NullInt64
+		if err := rows.Scan(&id, &parent); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if parent.Valid {
+			p := parent.Int64
+			parentOf[id] = &p
+		} else {
+			parentOf[id] = nil
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if _, ok := parentOf[parentID]; !ok {
+		return ValidationError{"parent_id": "that folder doesn't exist"}
+	}
+	seen := map[int64]bool{}
+	for p := &parentID; p != nil && !seen[*p]; p = parentOf[*p] {
+		if folderID != 0 && *p == folderID {
+			return ValidationError{"parent_id": "a folder can't be moved inside itself"}
+		}
+		seen[*p] = true
 	}
 	return nil
 }
