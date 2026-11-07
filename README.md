@@ -1,73 +1,115 @@
 # CaddyProxyManager (CPM)
 
-A web UI for managing a Caddy reverse proxy, replacing Nginx Proxy Manager.
+A web UI for running a Caddy reverse proxy, replacing Nginx Proxy Manager.
 CPM keeps hosts, certificates, folders and access rules in its own database
-and builds one complete Caddy JSON config from it, applied through Caddy's
-admin API.
+and builds **one complete Caddy JSON config** from it, sent through Caddy's
+admin API. If Caddy rejects a config it keeps running the previous one, so
+one bad host never takes down the rest.
 
 Spec and decisions: Harbor Master wiki, `CaddyProxyManager/Design`.
+Runbooks: `CaddyProxyManager/Operations` (and [docs/cutover.md](docs/cutover.md)).
 Work tracking: Harbor Master project `CPM`.
 
-## Layout
+## What it does
 
-| Path | What |
-|---|---|
-| `cmd/cpm` | Server entry point (API + embedded web UI) |
-| `internal/server` | HTTP routing, API handlers, static UI serving |
-| `internal/compiler` | Database state → Caddy JSON config (CPM-5) |
-| `internal/ingest` | Access-log ingester with GeoIP tagging (CPM-22) |
-| `web` | React + TypeScript frontend (Vite); `web/dist` is embedded in the binary |
-| `caddy` | Custom Caddy image: `Dockerfile` (pinned Caddy, xcaddy, base images) and `modules.txt` (pinned plugins) |
+- **Hosts:** proxy, redirect and 404 hosts with several domains, http/https
+  upstreams with load balancing and health checks, force HTTPS, HSTS,
+  compression, custom request/response headers, rate limits, advanced raw
+  Caddy routes (admins), clone.
+- **Apply safely:** every change shows a diff against Caddy's running config
+  first; every apply is a numbered version you can roll back to; drift
+  (Caddy changed outside CPM) is detected every minute.
+- **Certificates:** Let's Encrypt (HTTP challenge), Cloudflare DNS challenge
+  for wildcard and internal names, or Caddy's internal CA. A certificates
+  page shows expiry and Caddy's own error text, with "retry now".
+- **Folders:** nested, drag-and-drop; folders pass access policies, a DNS
+  provider, default headers and a rate limit down to their hosts.
+- **Access control:** allow-only / deny policies by IP, CIDR or country
+  (GeoLite2), a never-block list that overrides everything, bans, optional
+  CrowdSec community block lists.
+- **Dashboard:** traffic over time, bandwidth, error and blocked share,
+  response times, top IPs / countries / paths / status codes / hosts, IP
+  detail, live view.
+- **Honeypot:** a catch-all for unknown hosts and bare IPs, trap paths on
+  every host, scoring and automatic bans that reach every host in seconds.
+- **Admin:** users with admin / editor / viewer roles, TOTP two-factor
+  sign-in (can be required), sign-in rate limits, audit log, alerts, health
+  page, backup and restore, NPM importer.
 
-## Custom Caddy image
-
-`caddy/Dockerfile` builds Caddy with `xcaddy` from the plugins listed in
-`caddy/modules.txt`. To add a plugin (GeoIP, rate limiting, CrowdSec, l4),
-uncomment its line there and pin a version. The build fails if any listed
-plugin is missing from `caddy list-modules`.
-
-`make caddy` builds `cpm-caddy:dev` locally. On every push to `main` that
-touches `caddy/`, the **Caddy image** workflow tests the image and publishes
-it for amd64 and arm64 as `ghcr.io/encondata/cpm-caddy`, tagged `latest`,
-the Caddy version (e.g. `v2.11.9`), and `<caddy version>-<git sha>`.
-
-## Run it locally with Docker
+## Run it
 
 ```bash
+cp .env.example .env
+echo "CPM_SECRET_KEY=$(openssl rand -base64 32)" >> .env   # keep a copy somewhere safe
 docker compose up -d --build
 ```
 
-- CPM UI: `http://<host>:8080` (listens on 0.0.0.0)
-- Caddy: ports 80 and 443 on 0.0.0.0. With no hosts configured yet, it
-  answers 404 "No site is configured for this address."
-- First sign-in: **admin / 123456**. You must choose a new password before
-  anything else works.
+- CPM UI: `http://<host>:8080`. Keep it on the LAN / VPN.
+- Caddy: ports 80 and 443.
+- First sign-in: **admin / 123456**. You must choose a new password first.
+
+Optional extras:
+
+```bash
+docker compose --profile demo up -d    # a "whoami" test backend
+docker compose --profile geoip up -d   # GeoLite2 updates (needs a MaxMind key in .env)
+```
 
 ### Try it
 
-1. Start with the demo backend: `docker compose --profile demo up -d --build`
-2. In CPM, **Hosts → Add host**: domain `app.localhost`, upstream
-   `whoami` port `80`. Names ending in `.localhost` reach this machine with
-   no DNS setup, and Caddy gives them certificates from its internal CA.
-3. **Review & apply** shows the config diff; **Apply to Caddy**.
-4. Open `https://app.localhost` (accept the certificate warning) or
-   `curl -k https://app.localhost`. whoami echoes the request it received.
-5. **History** lists every apply; **Roll back** re-sends an older version.
+1. Start with the demo backend (above).
+2. **Hosts → Add host**: domain `app.localhost`, upstream `whoami` port `80`.
+   Names ending in `.localhost` reach this machine without DNS, and Caddy
+   gives them internal-CA certificates.
+3. **Review & apply**, then open `https://app.localhost` (accept the
+   certificate warning).
+4. Look at the **Dashboard**; try an access policy on **Access**; turn on
+   the **Honeypot** and request `http://app.localhost/.env`.
 
-Caddy runs as uid 1000 (the same user as CPM, so CPM can read certificate
-status from Caddy's data folder) and starts with the last config CPM
-applied, or `caddy/bootstrap.json` on a fresh install. Either way its admin
-API is only on the unix socket `/run/caddy/admin.sock`, shared with CPM
-through a volume. To start over with a fresh database (and the default admin
-again): `docker compose down && docker volume rm cpm_cpm-data`.
+### Settings (environment)
 
-## Requirements
+| Variable | Default | What |
+|---|---|---|
+| `CPM_SECRET_KEY` | — | 32 random bytes, base64. Encrypts DNS tokens, the CrowdSec key and 2FA secrets. Needed for those features. |
+| `CPM_LISTEN` | `0.0.0.0:8080` | CPM UI / API address |
+| `CPM_DATA_DIR` | `./data` (`/data` in Docker) | `cpm.db` (config) and `hits.db` (traffic) |
+| `CPM_SECURE_COOKIES` | `false` | Set `true` when CPM is served over HTTPS |
+| `CPM_ACME_CA` | Caddy's default | ACME directory, e.g. Let's Encrypt staging |
+| `CPM_ACME_EMAIL` | — | ACME account contact |
+| `CPM_ACME_CA_ROOTS` | — | Extra CA roots for the ACME server (tests) |
+| `CPM_HIT_RETENTION_DAYS` | `45` | How long raw traffic (with IPs) is kept |
+| `GEOIPUPDATE_ACCOUNT_ID` / `GEOIPUPDATE_LICENSE_KEY` | — | MaxMind GeoLite2 (country rules, dashboard countries) |
 
-- Go (version in `go.mod`)
-- Node 22
-- `golangci-lint` v2 (`brew install golangci-lint`)
+The container paths (`CPM_CADDY_ADMIN_SOCKET`, `CPM_SECRETS_DIR`,
+`CPM_CADDY_DATA_DIR`, log files, GeoIP path) are set in `compose.yaml`.
 
-## Common tasks
+### How it runs
+
+- Two containers, `caddy` (custom build, see below) and `cpm`, both as
+  uid 1000. Caddy's admin API is only on a unix socket shared through a
+  volume; port 2019 is never published.
+- Caddy starts with the last config CPM applied (or `caddy/bootstrap.json`).
+- Secrets (DNS tokens, CrowdSec key) are stored encrypted in `cpm.db` and
+  handed to Caddy as files in the `cpm-secrets` volume; the config refers to
+  them with `{file.…}`, so they never appear in config history or diffs.
+- Caddy writes a JSON access log (no query strings or headers) that CPM
+  ingests into `hits.db`: 45 days of raw hits (~220 bytes each, so about
+  10 GB at 1M requests/day), 13 months of hourly totals without IPs.
+- Backups (Health page) contain `cpm.db` only. Restoring needs the same
+  `CPM_SECRET_KEY`.
+
+## Custom Caddy image
+
+`caddy/Dockerfile` builds Caddy with `xcaddy` from the pinned plugins in
+`caddy/modules.txt` (Cloudflare DNS, MaxMind geolocation, rate limiting,
+CrowdSec). The build fails if a listed plugin is missing from
+`caddy list-modules`. CI publishes it as `ghcr.io/encondata/cpm-caddy`
+(amd64 + arm64).
+
+## Develop
+
+Requirements: Go (version in `go.mod`), Node 22, `golangci-lint` v2,
+Docker.
 
 ```bash
 make ui       # build the frontend into web/dist
@@ -76,11 +118,31 @@ make run      # run the server on :8080
 make test     # go test -race ./...
 make lint     # golangci-lint, oxlint, prettier check, tsc
 make fmt      # format Go and frontend code
+make caddy    # build and check the Caddy image
+tests/integration/run.sh   # end to end: Caddy + CPM + Pebble in Docker
 ```
 
-For UI work with hot reload, run `make run` in one terminal and
-`cd web && npm run dev` in another; Vite proxies `/api` to `:8080`.
+For UI work with hot reload, run `make run` and `cd web && npm run dev`;
+Vite proxies `/api` to `:8080`.
 
-CI (`.github/workflows/ci.yml`) runs on every push: it lints and builds the
-frontend, then lints, tests and builds the Go binary with the UI embedded,
-and smoke-tests it.
+| Path | What |
+|---|---|
+| `cmd/cpm` | Server entry point |
+| `internal/store` | SQLite database, migrations, validation, audit |
+| `internal/compiler` | Database state → Caddy JSON (golden-file tests in `testdata/`) |
+| `internal/apply` | Diff, apply, history, rollback, ban-list updates, secret files |
+| `internal/caddyadmin` | Caddy admin API client (unix socket) |
+| `internal/monitor` | Background checks: drift, Caddy, certificates, alerts |
+| `internal/hits` | Access-log ingester, traffic database, dashboard queries |
+| `internal/honeypot` | Scoring and automatic bans |
+| `internal/npmimport` | Nginx Proxy Manager importer |
+| `internal/server` | HTTP API and the embedded UI |
+| `internal/{secrets,totp,ratelimit,geoip,certs,cloudflare}` | Supporting packages |
+| `web` | React + TypeScript UI (Vite) |
+| `caddy` | Custom Caddy image |
+| `tests/integration` | End-to-end tests against real Caddy and Pebble |
+
+CI runs on every push: frontend lint/build; Go lint, race tests, build and
+smoke test; and the integration suite against real Caddy and Pebble.
+Load test for the traffic database:
+`CPM_LOADTEST=3000000 go test ./internal/hits -run TestLoad -v -timeout 30m`.
