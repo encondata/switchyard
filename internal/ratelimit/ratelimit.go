@@ -17,6 +17,13 @@ const maxKeyLen = 128
 // evictScan bounds how many entries one eviction looks at.
 const evictScan = 64
 
+// overflowKey collects attempts for keys that can't be tracked because the
+// map is full of locked-out keys. They're limited together (fail closed).
+const overflowKey = "\x00overflow"
+
+// overflowFactor sets the overflow bucket's limit relative to Max.
+const overflowFactor = 10
+
 // Failures tracks failed attempts.
 type Failures struct {
 	Max    int
@@ -76,7 +83,9 @@ func (f *Failures) Fail(key string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	now := f.now()
-	f.record(key, f.prune(key, now), now)
+	if !f.record(key, f.prune(key, now), now) {
+		f.hits[overflowKey] = append(f.prune(overflowKey, now), now)
+	}
 }
 
 // Attempt atomically checks key and, if it isn't blocked, counts this
@@ -91,7 +100,14 @@ func (f *Failures) Attempt(key string) (bool, time.Duration) {
 	if len(hits) >= f.Max {
 		return false, f.Window - now.Sub(hits[0])
 	}
-	f.record(key, hits, now)
+	if !f.record(key, hits, now) {
+		// No room to track this key: count it in the shared overflow bucket.
+		over := f.prune(overflowKey, now)
+		if len(over) >= f.Max*overflowFactor {
+			return false, f.Window - now.Sub(over[0])
+		}
+		f.hits[overflowKey] = append(over, now)
+	}
 	return true, 0
 }
 
@@ -116,8 +132,9 @@ func (f *Failures) Reset(key string) {
 	delete(f.hits, key)
 }
 
-// record adds a hit. Call with f.mu held and hits = f.prune(key, now).
-func (f *Failures) record(key string, hits []time.Time, now time.Time) {
+// record adds a hit and reports whether the key could be tracked. Call
+// with f.mu held and hits = f.prune(key, now).
+func (f *Failures) record(key string, hits []time.Time, now time.Time) bool {
 	limit := f.MaxKeys
 	if limit <= 0 {
 		limit = DefaultMaxKeys
@@ -132,10 +149,11 @@ func (f *Failures) record(key string, hits []time.Time, now time.Time) {
 			}
 		}
 		if len(f.hits) >= limit && !f.evictOne(now) {
-			return // full of locked-out keys: don't track this new one
+			return false // full of locked-out keys
 		}
 	}
 	f.hits[key] = append(hits, now)
+	return true
 }
 
 // evictOne drops a random key that isn't locked out, looking at a bounded
@@ -145,6 +163,9 @@ func (f *Failures) evictOne(now time.Time) bool {
 	for k, h := range f.hits {
 		if n++; n > evictScan {
 			return false
+		}
+		if k == overflowKey {
+			continue
 		}
 		live := 0
 		for _, t := range h {

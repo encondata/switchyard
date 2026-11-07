@@ -65,3 +65,20 @@ func TestKeyCap(t *testing.T) {
 		t.Fatal("a locked-out key was evicted")
 	}
 }
+
+func TestOverflowFailsClosed(t *testing.T) {
+	f := New(1, time.Minute)
+	f.MaxKeys = 3
+	for _, k := range []string{"a", "b", "c"} {
+		f.Attempt(k) // each now locked out (Max 1)
+	}
+	allowed := 0
+	for i := 0; i < 100; i++ {
+		if ok, _ := f.Attempt("new" + time.Duration(i).String()); ok {
+			allowed++
+		}
+	}
+	if allowed != f.Max*overflowFactor {
+		t.Fatalf("untracked keys allowed = %d, want %d (shared overflow limit)", allowed, f.Max*overflowFactor)
+	}
+}
