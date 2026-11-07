@@ -11,11 +11,13 @@ import {
   type AccessPolicy,
   type CertStatus,
   type DNSProvider,
+  type HeaderRule,
   type Folder,
   type Host,
   type HostView,
   type Upstream,
 } from './api'
+import { HeaderEditor } from './headers'
 
 const typeLabel = { proxy: 'Proxy', redirect: 'Redirect', '404': '404' }
 const tlsLabel = {
@@ -94,6 +96,12 @@ function FolderForm({
     folder?.dns_provider_id ?? null,
   )
   const [providers, setProviders] = useState<DNSProvider[]>([])
+  const [reqHeaders, setReqHeaders] = useState<HeaderRule[]>(
+    folder?.request_headers ?? [],
+  )
+  const [respHeaders, setRespHeaders] = useState<HeaderRule[]>(
+    folder?.response_headers ?? [],
+  )
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
 
@@ -120,6 +128,8 @@ function FolderForm({
         parent_id: parent,
         policy_ids: policyIds,
         dns_provider_id: dnsProvider,
+        request_headers: reqHeaders,
+        response_headers: respHeaders,
       })
       onDone(true)
     } catch (err) {
@@ -189,6 +199,23 @@ function FolderForm({
         <p className="hint">
           Every host in this folder and its subfolders gets these policies.
         </p>
+      </fieldset>
+      <fieldset>
+        <legend>Default headers</legend>
+        <HeaderEditor
+          label="Response headers"
+          hint="Sent to visitors of every host inside. A host’s own rule for the same header wins."
+          rules={respHeaders}
+          onChange={setRespHeaders}
+          error={fields.response_headers}
+        />
+        <HeaderEditor
+          label="Request headers (proxy hosts)"
+          hint="Sent to the backends of proxy hosts inside."
+          rules={reqHeaders}
+          onChange={setReqHeaders}
+          error={fields.request_headers}
+        />
       </fieldset>
       <label>
         Default DNS provider
@@ -595,6 +622,7 @@ export function HostList({
                             <td>
                               <div className="row-actions">
                                 <a href={`#/hosts/${h.id}`}>Edit</a>
+                                <a href={`#/hosts/new?clone=${h.id}`}>Clone</a>
                                 <button
                                   className="link danger"
                                   onClick={() => {
@@ -632,10 +660,15 @@ function FieldError({ msg }: { msg?: string }) {
 export function HostEditor({
   id,
   folderId,
+  cloneId,
+  isAdmin,
   onSaved,
 }: {
   id: number | null
   folderId?: number | null
+  /** Start a new host as a copy of this one (without its domains). */
+  cloneId?: number | null
+  isAdmin: boolean
   onSaved: () => void
 }) {
   const [host, setHost] = useState<Host | null>(
@@ -657,15 +690,22 @@ export function HostEditor({
         setProviders(d.providers)
       })
       .catch((err: unknown) => setError(message(err)))
-    if (!id) return
+    const source = id ?? cloneId
+    if (!source) return
     api
-      .host(id)
+      .host(source)
       .then((h) => {
-        setHost(h)
-        setDomains(h.domains.join('\n'))
+        if (id) {
+          setHost(h)
+          setDomains(h.domains.join('\n'))
+        } else {
+          // A clone: same settings, new domains (domains must be unique).
+          setHost({ ...h, id: 0, domains: [], enabled: true })
+          setDomains('')
+        }
       })
       .catch((err: unknown) => setError(message(err)))
-  }, [id])
+  }, [id, cloneId])
 
   if (!host) return <p>{error ?? 'Loading…'}</p>
 
@@ -706,7 +746,12 @@ export function HostEditor({
 
   return (
     <form className="card" onSubmit={submit}>
-      <h1>{id ? 'Edit host' : 'Add host'}</h1>
+      <h1>{id ? 'Edit host' : cloneId ? 'Clone host' : 'Add host'}</h1>
+      {cloneId && !id && (
+        <p className="notice">
+          A copy of host #{cloneId}. Enter the new host’s domains.
+        </p>
+      )}
 
       <fieldset>
         <legend>Type</legend>
@@ -1037,6 +1082,87 @@ export function HostEditor({
           ))}
         </div>
       </fieldset>
+
+      <fieldset>
+        <legend>Headers</legend>
+        <HeaderEditor
+          label="Response headers"
+          hint="Sent to visitors. Values can use Caddy placeholders. Folder defaults apply first."
+          rules={host.response_headers}
+          onChange={(r) => set({ response_headers: r })}
+          error={fields.response_headers}
+        />
+        {host.type === 'proxy' && (
+          <HeaderEditor
+            label="Request headers"
+            hint="Sent to the backend, e.g. X-Real-IP = {http.request.remote.host}."
+            rules={host.request_headers}
+            onChange={(r) => set({ request_headers: r })}
+            error={fields.request_headers}
+          />
+        )}
+      </fieldset>
+
+      {host.type === 'proxy' && (
+        <fieldset>
+          <legend>Health checks</legend>
+          <div className="actions">
+            <label>
+              Check path <span className="hint">(empty = off)</span>
+              <input
+                className="mono"
+                placeholder="/health"
+                value={host.health_check_path}
+                onChange={(e) => set({ health_check_path: e.target.value })}
+              />
+            </label>
+            <label>
+              Every (seconds)
+              <input
+                type="number"
+                min={5}
+                max={3600}
+                value={host.health_check_interval}
+                onChange={(e) =>
+                  set({ health_check_interval: Number(e.target.value) })
+                }
+              />
+            </label>
+          </div>
+          <FieldError
+            msg={fields.health_check_path ?? fields.health_check_interval}
+          />
+          <span className="hint">
+            Caddy requests this path on each upstream and stops sending traffic
+            to ones that don’t answer with a 2xx status.
+          </span>
+        </fieldset>
+      )}
+
+      <details open={!!host.advanced_json}>
+        <summary>Advanced: raw Caddy routes</summary>
+        <label>
+          JSON array of Caddy routes, run after the access rules and before this
+          host’s handler.{' '}
+          {!isAdmin && <span className="hint">(admins only)</span>}
+          <textarea
+            rows={6}
+            className="mono"
+            readOnly={!isAdmin}
+            placeholder={
+              '[{"match":[{"path":["/old/*"]}],"handle":[{"handler":"static_response","status_code":"410"}],"terminal":true}]'
+            }
+            value={host.advanced_json}
+            onChange={(e) => set({ advanced_json: e.target.value })}
+          />
+          <FieldError msg={fields.advanced_json} />
+          <span className="hint">
+            CPM checks the shape when you save; Caddy checks the rest when you
+            apply. If Caddy rejects it, every host keeps running the previous
+            config.
+          </span>
+        </label>
+      </details>
 
       <label>
         Notes

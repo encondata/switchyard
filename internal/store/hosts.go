@@ -52,9 +52,21 @@ type Host struct {
 	PolicyIDs []int64 `json:"policy_ids"`
 	// DNSProviderID picks the DNS provider for TLS "dns"; nil means use the
 	// nearest folder's default.
-	DNSProviderID *int64    `json:"dns_provider_id"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	DNSProviderID *int64 `json:"dns_provider_id"`
+	// RequestHeaders change headers sent to the upstream (proxy hosts);
+	// ResponseHeaders change headers sent to the client. Folder defaults
+	// are applied first, so a host rule for the same header wins.
+	RequestHeaders  []HeaderRule `json:"request_headers"`
+	ResponseHeaders []HeaderRule `json:"response_headers"`
+	// HealthCheckPath turns on active health checks of the upstreams
+	// ("" = off), every HealthCheckInterval seconds.
+	HealthCheckPath     string `json:"health_check_path"`
+	HealthCheckInterval int    `json:"health_check_interval"`
+	// AdvancedJSON is a raw array of Caddy routes placed after the access
+	// rules and before the host's own handler. Admins only.
+	AdvancedJSON string    `json:"advanced_json"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // Upstream is a backend a proxy host forwards to.
@@ -141,6 +153,16 @@ func (h *Host) Normalize() {
 	if h.TLSMode != TLSDNS || (h.DNSProviderID != nil && *h.DNSProviderID <= 0) {
 		h.DNSProviderID = nil
 	}
+	h.RequestHeaders = normalizeHeaders(h.RequestHeaders)
+	h.ResponseHeaders = normalizeHeaders(h.ResponseHeaders)
+	h.HealthCheckPath = strings.TrimSpace(h.HealthCheckPath)
+	if h.HealthCheckInterval <= 0 {
+		h.HealthCheckInterval = 30
+	}
+	if h.Type != HostProxy {
+		h.RequestHeaders = []HeaderRule{}
+		h.HealthCheckPath = ""
+	}
 	if h.TLSMode == TLSOff {
 		h.ForceHTTPS = false
 		h.HSTS = false
@@ -217,6 +239,25 @@ func (h *Host) Validate() error {
 			errs["redirect_code"] = "must be 301, 302, 307 or 308"
 		}
 	}
+	if msg := validateHeaders(h.RequestHeaders); msg != "" {
+		errs["request_headers"] = msg
+	}
+	if msg := validateHeaders(h.ResponseHeaders); msg != "" {
+		errs["response_headers"] = msg
+	}
+	if h.HealthCheckPath != "" {
+		if !strings.HasPrefix(h.HealthCheckPath, "/") || strings.ContainsAny(h.HealthCheckPath, " {}\r\n") {
+			errs["health_check_path"] = "enter a path starting with /, like /health"
+		}
+		if h.HealthCheckInterval < 5 || h.HealthCheckInterval > 3600 {
+			errs["health_check_interval"] = "check every 5 to 3600 seconds"
+		}
+	}
+	if canon, err := ValidateAdvancedJSON(h.AdvancedJSON); err != nil {
+		errs["advanced_json"] = err.Error()
+	} else {
+		h.AdvancedJSON = canon
+	}
 	if len(h.Notes) > 2000 {
 		errs["notes"] = "keep notes under 2000 characters"
 	}
@@ -253,16 +294,17 @@ var ErrDomainTaken = errors.New("domain already used by another host")
 
 const hostColumns = `id, type, enabled, upstreams, load_balancing, tls_mode, force_https, hsts,
 	compression, redirect_to, redirect_code, preserve_path, notes, folder_id, acme_challenge, dns_provider_id,
-	created_at, updated_at`
+	request_headers, response_headers, health_check_path, health_check_interval, advanced_json, created_at, updated_at`
 
 func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	var h Host
 	var upstreams string
 	var folder, dnsProvider sql.NullInt64
-	var challenge string
+	var challenge, reqHeaders, respHeaders string
 	err := row.Scan(&h.ID, &h.Type, &h.Enabled, &upstreams, &h.LoadBalancing, &h.TLSMode, &h.ForceHTTPS,
 		&h.HSTS, &h.Compression, &h.RedirectTo, &h.RedirectCode, &h.PreservePath, &h.Notes, &folder,
-		&challenge, &dnsProvider, &h.CreatedAt, &h.UpdatedAt)
+		&challenge, &dnsProvider, &reqHeaders, &respHeaders, &h.HealthCheckPath, &h.HealthCheckInterval,
+		&h.AdvancedJSON, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return h, err
 	}
@@ -275,6 +317,8 @@ func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	if h.TLSMode == TLSAuto && challenge == "dns" {
 		h.TLSMode = TLSDNS
 	}
+	h.RequestHeaders = decodeHeaders(reqHeaders)
+	h.ResponseHeaders = decodeHeaders(respHeaders)
 	h.PolicyIDs = []int64{}
 	if err := json.Unmarshal([]byte(upstreams), &h.Upstreams); err != nil {
 		return h, fmt.Errorf("host %d: bad upstreams JSON: %w", h.ID, err)
@@ -407,12 +451,15 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 		tlsMode, challenge = TLSAuto, "dns"
 	}
 	args := []any{h.Type, h.Enabled, string(upstreams), h.LoadBalancing, tlsMode, h.ForceHTTPS, h.HSTS,
-		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID, challenge, h.DNSProviderID}
+		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID, challenge, h.DNSProviderID,
+		encodeHeaders(h.RequestHeaders), encodeHeaders(h.ResponseHeaders), h.HealthCheckPath, h.HealthCheckInterval,
+		h.AdvancedJSON}
 	if h.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO hosts (type, enabled, upstreams, load_balancing, tls_mode,
 			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes, folder_id,
-			acme_challenge, dns_provider_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
+			acme_challenge, dns_provider_id, request_headers, response_headers, health_check_path,
+			health_check_interval, advanced_json)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 		if err != nil {
 			return Host{}, err
 		}
@@ -423,7 +470,8 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 		if _, err := tx.ExecContext(ctx, `UPDATE hosts SET type = ?, enabled = ?, upstreams = ?, load_balancing = ?,
 			tls_mode = ?, force_https = ?, hsts = ?, compression = ?, redirect_to = ?, redirect_code = ?,
 			preserve_path = ?, notes = ?, folder_id = ?, acme_challenge = ?, dns_provider_id = ?,
-			updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			request_headers = ?, response_headers = ?, health_check_path = ?, health_check_interval = ?,
+			advanced_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 			append(args, h.ID)...); err != nil {
 			return Host{}, err
 		}

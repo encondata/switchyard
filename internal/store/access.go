@@ -30,6 +30,9 @@ type Folder struct {
 	// DNSProviderID is the default DNS provider for hosts inside (and in
 	// subfolders) that use the DNS challenge without picking one.
 	DNSProviderID *int64 `json:"dns_provider_id"`
+	// Default headers for hosts inside (applied before the host's own).
+	RequestHeaders  []HeaderRule `json:"request_headers"`
+	ResponseHeaders []HeaderRule `json:"response_headers"`
 }
 
 // Access policy modes and responses (spec F4).
@@ -100,7 +103,7 @@ func ParseRule(raw string) (string, error) {
 // ListFolders returns every folder with its policies and direct host count.
 func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.id, f.name, f.parent_id, f.sort, f.dns_provider_id,
+		SELECT f.id, f.name, f.parent_id, f.sort, f.dns_provider_id, f.request_headers, f.response_headers,
 			(SELECT COUNT(*) FROM hosts h WHERE h.folder_id = f.id)
 		FROM folders f ORDER BY f.sort, f.name COLLATE NOCASE`)
 	if err != nil {
@@ -111,7 +114,8 @@ func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 	for rows.Next() {
 		var f Folder
 		var parent, dnsProvider sql.NullInt64
-		if err := rows.Scan(&f.ID, &f.Name, &parent, &f.Sort, &dnsProvider, &f.HostCount); err != nil {
+		var reqH, respH string
+		if err := rows.Scan(&f.ID, &f.Name, &parent, &f.Sort, &dnsProvider, &reqH, &respH, &f.HostCount); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -121,6 +125,7 @@ func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 		if dnsProvider.Valid {
 			f.DNSProviderID = &dnsProvider.Int64
 		}
+		f.RequestHeaders, f.ResponseHeaders = decodeHeaders(reqH), decodeHeaders(respH)
 		f.PolicyIDs = []int64{}
 		byID[f.ID] = len(out)
 		out = append(out, f)
@@ -176,6 +181,13 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 	} else if len(f.Name) > 100 {
 		errs["name"] = "keep the name under 100 characters"
 	}
+	f.RequestHeaders, f.ResponseHeaders = normalizeHeaders(f.RequestHeaders), normalizeHeaders(f.ResponseHeaders)
+	if msg := validateHeaders(f.RequestHeaders); msg != "" {
+		errs["request_headers"] = msg
+	}
+	if msg := validateHeaders(f.ResponseHeaders); msg != "" {
+		errs["response_headers"] = msg
+	}
 	if len(errs) > 0 {
 		return Folder{}, errs
 	}
@@ -215,8 +227,9 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 		}
 	}
 	if f.ID == 0 {
-		res, err := tx.ExecContext(ctx, `INSERT INTO folders (name, parent_id, sort, dns_provider_id) VALUES (?, ?, ?, ?)`,
-			f.Name, f.ParentID, f.Sort, f.DNSProviderID)
+		res, err := tx.ExecContext(ctx, `INSERT INTO folders (name, parent_id, sort, dns_provider_id, request_headers, response_headers)
+			VALUES (?, ?, ?, ?, ?, ?)`,
+			f.Name, f.ParentID, f.Sort, f.DNSProviderID, encodeHeaders(f.RequestHeaders), encodeHeaders(f.ResponseHeaders))
 		if err != nil {
 			return Folder{}, folderNameError(err)
 		}
@@ -224,8 +237,10 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 			return Folder{}, err
 		}
 	} else if _, err := tx.ExecContext(ctx,
-		`UPDATE folders SET name = ?, parent_id = ?, sort = ?, dns_provider_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		f.Name, f.ParentID, f.Sort, f.DNSProviderID, f.ID); err != nil {
+		`UPDATE folders SET name = ?, parent_id = ?, sort = ?, dns_provider_id = ?, request_headers = ?,
+			response_headers = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		f.Name, f.ParentID, f.Sort, f.DNSProviderID, encodeHeaders(f.RequestHeaders), encodeHeaders(f.ResponseHeaders),
+		f.ID); err != nil {
 		return Folder{}, folderNameError(err)
 	}
 	if err := setLinks(ctx, tx, "folder_policies", "folder_id", f.ID, f.PolicyIDs); err != nil {
@@ -625,6 +640,29 @@ func (st AccessState) EffectivePolicies(h Host) []InheritedPolicy {
 		fid = f.ParentID
 	}
 	return out
+}
+
+// EffectiveHeaders returns the header rules for a host: folder defaults
+// from the top folder down, then the host's own. Later rules win.
+func (st AccessState) EffectiveHeaders(h Host) (request, response []HeaderRule) {
+	var chain []Folder
+	visited := map[int64]bool{}
+	for fid := h.FolderID; fid != nil && !visited[*fid]; {
+		visited[*fid] = true
+		f, ok := st.Folders[*fid]
+		if !ok {
+			break
+		}
+		chain = append(chain, f)
+		fid = f.ParentID
+	}
+	for i := len(chain) - 1; i >= 0; i-- {
+		request = append(request, chain[i].RequestHeaders...)
+		response = append(response, chain[i].ResponseHeaders...)
+	}
+	request = append(request, h.RequestHeaders...)
+	response = append(response, h.ResponseHeaders...)
+	return request, response
 }
 
 // EffectiveDNSProvider returns the DNS provider a host uses for the DNS

@@ -78,12 +78,16 @@ function App() {
       />
     )
   else if (route.startsWith('/hosts/new')) {
-    const folder = new URLSearchParams(route.split('?')[1] ?? '').get('folder')
+    const q = new URLSearchParams(route.split('?')[1] ?? '')
+    const folder = q.get('folder')
+    const clone = q.get('clone')
     body = (
       <HostEditor
         key={route}
         id={null}
         folderId={folder ? Number(folder) : null}
+        cloneId={clone ? Number(clone) : null}
+        isAdmin={user.role === 'admin'}
         onSaved={() => (location.hash = '#/hosts')}
       />
     )
@@ -92,6 +96,7 @@ function App() {
       <HostEditor
         key={route}
         id={Number(route.split('/')[2])}
+        isAdmin={user.role === 'admin'}
         onSaved={() => (location.hash = '#/hosts')}
       />
     )

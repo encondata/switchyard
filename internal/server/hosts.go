@@ -106,6 +106,23 @@ func (s *srv) handleSaveHost(w http.ResponseWriter, r *http.Request) {
 		h.ID = id
 		status = http.StatusOK
 	}
+	// The advanced snippet can do anything Caddy can (serve files, call
+	// other services), so only admins may change it.
+	if userFrom(r).Role != "admin" {
+		current := ""
+		if h.ID != 0 {
+			old, err := s.store.GetHost(r.Context(), h.ID)
+			if s.storeError(w, err) {
+				return
+			}
+			current = old.AdvancedJSON
+		}
+		incoming, verr := store.ValidateAdvancedJSON(h.AdvancedJSON)
+		if verr == nil && incoming != current {
+			writeError(w, http.StatusForbidden, "forbidden", "Only admins can change a host's advanced JSON.")
+			return
+		}
+	}
 	saved, err := s.store.SaveHost(r.Context(), h, userFrom(r).Username)
 	if s.storeError(w, err) {
 		return

@@ -126,3 +126,41 @@ func TestConfigVersions(t *testing.T) {
 		t.Fatalf("ListConfigVersions = %+v", list)
 	}
 }
+
+func TestHeadersAndAdvanced(t *testing.T) {
+	h := proxyHost("a.localhost")
+	h.RequestHeaders = []HeaderRule{{Name: "X-Real-IP", Value: "{http.request.remote.host}"}, {}}
+	h.ResponseHeaders = []HeaderRule{{Op: "delete", Name: "Server", Value: "ignored"}}
+	h.HealthCheckPath = "/health"
+	h.AdvancedJSON = ` [ {"handle":[{"handler":"static_response"}]} ] `
+	h.Normalize()
+	if err := h.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if len(h.RequestHeaders) != 1 || h.RequestHeaders[0].Op != "set" || h.ResponseHeaders[0].Value != "" {
+		t.Fatalf("headers not normalized: %+v %+v", h.RequestHeaders, h.ResponseHeaders)
+	}
+	if h.AdvancedJSON != `[{"handle":[{"handler":"static_response"}]}]` || h.HealthCheckInterval != 30 {
+		t.Fatalf("advanced = %s, interval = %d", h.AdvancedJSON, h.HealthCheckInterval)
+	}
+
+	bad := map[string]Host{
+		"header name":         {RequestHeaders: []HeaderRule{{Name: "Bad Name", Value: "x"}}},
+		"header newline":      {ResponseHeaders: []HeaderRule{{Name: "X-A", Value: "a\r\nInjected: yes"}}},
+		"reserved header":     {RequestHeaders: []HeaderRule{{Name: "Host", Value: "x"}}},
+		"empty value":         {ResponseHeaders: []HeaderRule{{Op: "set", Name: "X-A"}}},
+		"health path":         {HealthCheckPath: "health"},
+		"advanced object":     {AdvancedJSON: `{"handle":[]}`},
+		"advanced key":        {AdvancedJSON: `[{"listen":[":81"]}]`},
+		"advanced no handler": {AdvancedJSON: `[{"handle":[{"body":"x"}]}]`},
+	}
+	for name, b := range bad {
+		x := proxyHost("a.localhost")
+		x.RequestHeaders, x.ResponseHeaders = b.RequestHeaders, b.ResponseHeaders
+		x.HealthCheckPath, x.AdvancedJSON = b.HealthCheckPath, b.AdvancedJSON
+		x.Normalize()
+		if err := x.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

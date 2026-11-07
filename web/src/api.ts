@@ -38,6 +38,11 @@ export type Host = {
   folder_id: number | null
   policy_ids: number[]
   dns_provider_id: number | null
+  request_headers: HeaderRule[]
+  response_headers: HeaderRule[]
+  health_check_path: string
+  health_check_interval: number
+  advanced_json: string
   created_at?: string
   updated_at?: string
 }
@@ -55,6 +60,12 @@ export type CertStatus = {
 
 export type HostView = Host & { certs: CertStatus[] }
 
+export type HeaderRule = {
+  op: 'set' | 'add' | 'delete'
+  name: string
+  value: string
+}
+
 export type Folder = {
   id: number
   name: string
@@ -63,6 +74,8 @@ export type Folder = {
   policy_ids: number[]
   host_count: number
   dns_provider_id: number | null
+  request_headers: HeaderRule[]
+  response_headers: HeaderRule[]
 }
 
 export type DNSProvider = {
@@ -291,7 +304,13 @@ export const api = {
   saveFolder: (
     f: Pick<
       Folder,
-      'id' | 'name' | 'parent_id' | 'policy_ids' | 'dns_provider_id'
+      | 'id'
+      | 'name'
+      | 'parent_id'
+      | 'policy_ids'
+      | 'dns_provider_id'
+      | 'request_headers'
+      | 'response_headers'
     >,
   ) =>
     f.id
@@ -370,5 +389,10 @@ export function newHost(): Host {
     folder_id: null,
     policy_ids: [],
     dns_provider_id: null,
+    request_headers: [],
+    response_headers: [],
+    health_check_path: '',
+    health_check_interval: 30,
+    advanced_json: '',
   }
 }

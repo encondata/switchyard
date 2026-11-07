@@ -190,12 +190,20 @@ func acmeIssuer(s Settings) obj {
 }
 
 func hostRoute(h store.Host, access store.AccessState) (obj, error) {
-	var handlers []any
+	// Header handlers go in their own route before the advanced snippet, so
+	// they also cover responses the snippet produces.
+	var headerHandlers, handlers []any
 	if h.HSTS && h.TLSMode != store.TLSOff {
-		handlers = append(handlers, obj{
+		headerHandlers = append(headerHandlers, obj{
 			"handler":  "headers",
 			"response": obj{"set": obj{"Strict-Transport-Security": []string{"max-age=31536000"}}},
 		})
+	}
+	reqHeaders, respHeaders := access.EffectiveHeaders(h)
+	if ops := headerOps(respHeaders); ops != nil {
+		// Deferred, so the rules also apply to headers the upstream sets.
+		ops["deferred"] = true
+		headerHandlers = append(headerHandlers, obj{"handler": "headers", "response": ops})
 	}
 	switch h.Type {
 	case store.HostProxy:
@@ -206,7 +214,11 @@ func hostRoute(h store.Host, access store.AccessState) (obj, error) {
 				"prefer":    []string{"zstd", "gzip"},
 			})
 		}
-		handlers = append(handlers, proxyHandler(h))
+		p := proxyHandler(h)
+		if ops := headerOps(reqHeaders); ops != nil {
+			p["headers"] = obj{"request": ops}
+		}
+		handlers = append(handlers, p)
 	case store.HostRedirect:
 		loc := h.RedirectTo
 		if h.PreservePath {
@@ -227,10 +239,24 @@ func hostRoute(h store.Host, access store.AccessState) (obj, error) {
 	default:
 		return nil, fmt.Errorf("unknown host type %q", h.Type)
 	}
+	// Access rules always come first, so the advanced snippet can't bypass
+	// them; then the snippet; then the host's own handlers.
+	subroutes := accessRoutes(h, access)
+	if len(headerHandlers) > 0 {
+		subroutes = append(subroutes, obj{"handle": headerHandlers})
+	}
+	if h.AdvancedJSON != "" {
+		var adv []any
+		if err := json.Unmarshal([]byte(h.AdvancedJSON), &adv); err != nil {
+			return nil, fmt.Errorf("advanced JSON: %w", err)
+		}
+		subroutes = append(subroutes, adv...)
+	}
+	subroutes = append(subroutes, obj{"handle": handlers})
 	return obj{
 		"@id":      fmt.Sprintf("cpm_host_%d", h.ID),
 		"match":    []any{obj{"host": h.Domains}},
-		"handle":   []any{obj{"handler": "subroute", "routes": append(accessRoutes(h, access), obj{"handle": handlers})}},
+		"handle":   []any{obj{"handler": "subroute", "routes": subroutes}},
 		"terminal": true,
 	}, nil
 }
@@ -256,7 +282,85 @@ func proxyHandler(h store.Host) obj {
 		}
 		p["transport"] = obj{"protocol": "http", "tls": tls}
 	}
+	if h.HealthCheckPath != "" {
+		p["health_checks"] = obj{
+			"active": obj{
+				"uri":      h.HealthCheckPath,
+				"interval": fmt.Sprintf("%ds", h.HealthCheckInterval),
+				"timeout":  "5s",
+			},
+			// Also stop sending traffic to an upstream that just failed.
+			"passive": obj{"fail_duration": "30s"},
+		}
+	}
 	return p
+}
+
+// headerOps folds header rules, in order, into Caddy's header operations.
+// Caddy applies add, then set, then delete, so a later rule for a header
+// replaces earlier rules for the same header.
+func headerOps(rules []store.HeaderRule) obj {
+	if len(rules) == 0 {
+		return nil
+	}
+	type state struct {
+		op     string
+		values []string
+	}
+	order := []string{}
+	byName := map[string]*state{}
+	for _, r := range rules {
+		key := strings.ToLower(r.Name)
+		st, ok := byName[key]
+		if !ok {
+			st = &state{}
+			byName[key] = st
+			order = append(order, r.Name)
+		}
+		switch r.Op {
+		case "set", "delete":
+			st.op, st.values = r.Op, nil
+			if r.Op == "set" {
+				st.values = []string{r.Value}
+			}
+		case "add":
+			// After a set, keep it a set with both values (Caddy would
+			// otherwise apply the set after the add and drop the added value).
+			// After a delete, start over with just this value.
+			switch st.op {
+			case "delete", "":
+				st.op, st.values = "add", nil
+			}
+			st.values = append(st.values, r.Value)
+		}
+	}
+	set, add := obj{}, obj{}
+	var del []string
+	for _, name := range order {
+		st := byName[strings.ToLower(name)]
+		switch st.op {
+		case "set":
+			set[name] = st.values
+		case "add":
+			add[name] = st.values
+		case "delete":
+			del = append(del, name)
+		}
+	}
+	ops := obj{}
+	if len(set) > 0 {
+		ops["set"] = set
+	}
+	if len(add) > 0 {
+		ops["add"] = add
+	}
+	if len(del) > 0 {
+		ops["delete"] = del
+	}
+	if len(ops) == 0 {
+		return nil
+	}
+	return ops
 }
 
 func redirectToHTTPSRoute(h store.Host) obj {

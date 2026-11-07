@@ -576,3 +576,34 @@ tr[draggable='true'] {
 .hosts-layout > .card {
   margin: 0;
 }
+
+.header-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.header-editor .label {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.header-row {
+  display: grid;
+  grid-template-columns: 6.5rem minmax(8rem, 1fr) minmax(8rem, 1.4fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.6rem;
+}
+
+@media (max-width: 640px) {
+  .header-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}

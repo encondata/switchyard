@@ -1,0 +1,182 @@
+{
+  "admin": {
+    "config": {
+      "persist": false
+    },
+    "listen": "unix//run/caddy/admin.sock|0660"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "cpm_http": {
+          "listen": [
+            ":80"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_host_1",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "body": "Access denied.\n",
+                          "handler": "static_response",
+                          "headers": {
+                            "Content-Type": [
+                              "text/plain; charset=utf-8"
+                            ]
+                          },
+                          "status_code": "403"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "client_ip": {
+                            "ranges": [
+                              "192.0.2.0/24"
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "headers",
+                          "response": {
+                            "deferred": true,
+                            "delete": [
+                              "Server"
+                            ],
+                            "set": {
+                              "X-Frame-Options": [
+                                "DENY"
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "body": "static",
+                          "handler": "static_response"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "path": [
+                            "/static/*"
+                          ]
+                        }
+                      ],
+                      "terminal": true
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "headers": {
+                            "request": {
+                              "set": {
+                                "X-Real-IP": [
+                                  "{http.request.remote.host}"
+                                ]
+                              }
+                            }
+                          },
+                          "health_checks": {
+                            "active": {
+                              "interval": "15s",
+                              "timeout": "5s",
+                              "uri": "/health"
+                            },
+                            "passive": {
+                              "fail_duration": "30s"
+                            }
+                          },
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "round_robin"
+                            }
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "a:80"
+                            },
+                            {
+                              "dial": "b:80"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "app.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_not_configured_http",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        },
+        "cpm_https": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_not_configured_https",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "pki": {
+      "certificate_authorities": {
+        "local": {
+          "install_trust": false
+        }
+      }
+    }
+  }
+}
