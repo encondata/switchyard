@@ -339,3 +339,26 @@ func TestCountryRules(t *testing.T) {
 		t.Errorf("geo config differs from %s; run with -update if intended.\n%s", path, got)
 	}
 }
+
+func TestAccessLogConfig(t *testing.T) {
+	st := settings
+	st.AccessLogFile = "/var/log/caddy/access.log"
+	out, err := Compile(st, nil, store.AccessState{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg map[string]any
+	_ = json.Unmarshal(out, &cfg)
+	logs := cfg["logging"].(map[string]any)["logs"].(map[string]any)
+	if logs["cpm_access"] == nil || logs["default"] == nil {
+		t.Fatalf("logs = %v", logs)
+	}
+	srv := cfg["apps"].(map[string]any)["http"].(map[string]any)["servers"].(map[string]any)[HTTPSServer].(map[string]any)
+	if srv["logs"].(map[string]any)["default_logger_name"] != "cpm_access" {
+		t.Fatalf("server logs = %v", srv["logs"])
+	}
+	// CPM_WRITE_CONFIG=path writes the config for a manual `caddy validate`.
+	if p := os.Getenv("CPM_WRITE_CONFIG"); p != "" {
+		_ = os.WriteFile(p, out, 0o600)
+	}
+}

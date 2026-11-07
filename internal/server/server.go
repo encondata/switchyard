@@ -17,6 +17,7 @@ import (
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
 	"github.com/encondata/caddyproxymanager/internal/geoip"
+	"github.com/encondata/caddyproxymanager/internal/hits"
 	"github.com/encondata/caddyproxymanager/internal/monitor"
 	"github.com/encondata/caddyproxymanager/internal/ratelimit"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
@@ -50,6 +51,8 @@ type Options struct {
 	Restart func()
 	// GeoIP is the country database (for its age and lookups).
 	GeoIP *geoip.DB
+	// Hits is the traffic database (dashboard). Stats routes need it.
+	Hits *hits.DB
 }
 
 type srv struct {
@@ -69,6 +72,8 @@ type srv struct {
 	userFailures *ratelimit.Failures
 	imports      pendingImports
 	geo          *geoip.DB
+	hits         *hits.DB
+	topCache     topCache
 }
 
 // New returns the root HTTP handler.
@@ -89,6 +94,7 @@ func New(opts Options) http.Handler {
 		dataDir:       opts.DataDir,
 		restart:       opts.Restart,
 		geo:           opts.GeoIP,
+		hits:          opts.Hits,
 		ipFailures:    ratelimit.New(10, 15*time.Minute),
 		userFailures:  ratelimit.New(5, 15*time.Minute),
 	}
@@ -165,6 +171,12 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("POST /api/restore", s.requireAdmin(s.handleRestore))
 		mux.HandleFunc("POST /api/import/npm/preview", s.requireAdmin(s.handleImportPreview))
 		mux.HandleFunc("POST /api/import/npm/run", s.requireAdmin(s.handleImportRun))
+	}
+	if s.store != nil && s.hits != nil {
+		mux.HandleFunc("GET /api/stats/overview", s.requireUser(false, s.handleStatsOverview))
+		mux.HandleFunc("GET /api/stats/top", s.requireUser(false, s.handleStatsTop))
+		mux.HandleFunc("GET /api/stats/tail", s.requireUser(false, s.handleStatsTail))
+		mux.HandleFunc("GET /api/stats/ip/{ip}", s.requireUser(false, s.handleStatsIP))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")

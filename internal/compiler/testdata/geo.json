@@ -22,6 +22,7 @@
                     {
                       "handle": [
                         {
+                          "early": true,
                           "handler": "log_append",
                           "key": "cpm_blocked",
                           "value": "deny:policy:2"
@@ -45,6 +46,7 @@
                     {
                       "handle": [
                         {
+                          "early": true,
                           "handler": "log_append",
                           "key": "cpm_blocked",
                           "value": "not_allowed"

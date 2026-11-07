@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
 	"github.com/encondata/caddyproxymanager/internal/compiler"
 	"github.com/encondata/caddyproxymanager/internal/geoip"
+	"github.com/encondata/caddyproxymanager/internal/hits"
 	"github.com/encondata/caddyproxymanager/internal/monitor"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/server"
@@ -105,12 +107,13 @@ func main() {
 		Store: st,
 		Caddy: caddyAPI,
 		Settings: compiler.Settings{
-			AdminListen: adminListen,
-			SecretsDir:  secretsDir,
-			ACMECA:      os.Getenv("CPM_ACME_CA"),
-			ACMEEmail:   os.Getenv("CPM_ACME_EMAIL"),
-			TLSLogFile:  envOr("CPM_CADDY_TLS_LOG", "/var/log/caddy/tls.log"),
-			GeoIPDB:     envOr("CPM_CADDY_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb"),
+			AdminListen:   adminListen,
+			SecretsDir:    secretsDir,
+			ACMECA:        os.Getenv("CPM_ACME_CA"),
+			ACMEEmail:     os.Getenv("CPM_ACME_EMAIL"),
+			TLSLogFile:    envOr("CPM_CADDY_TLS_LOG", "/var/log/caddy/tls.log"),
+			GeoIPDB:       envOr("CPM_CADDY_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb"),
+			AccessLogFile: envOr("CPM_CADDY_ACCESS_LOG", "/var/log/caddy/access.log"),
 		},
 		GeoIP:      geo,
 		ConfigFile: os.Getenv("CPM_CADDY_CONFIG_FILE"),
@@ -122,6 +125,21 @@ func main() {
 	if err := applier.SyncSecrets(ctx); err != nil {
 		logger.Warn("writing DNS provider tokens", "err", err)
 	}
+
+	// Traffic: Caddy's access log → hits.db (its own file, so config
+	// backups stay small).
+	hitsDB, err := hits.Open(ctx, filepath.Join(*dataDir, "hits.db"))
+	if err != nil {
+		logger.Error("opening hits database", "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = hitsDB.Close() }()
+	retainDays, _ := strconv.Atoi(os.Getenv("CPM_HIT_RETENTION_DAYS"))
+	ingester := &hits.Ingester{
+		DB: hitsDB, File: envOr("CPM_ACCESS_LOG", "/var/log/caddy/access.log"), Geo: geo, Log: logger,
+		RetainHits: time.Duration(retainDays) * 24 * time.Hour,
+	}
+	go ingester.Run(ctx)
 
 	var mon *monitor.Monitor
 	if caddy != nil {
@@ -140,7 +158,7 @@ func main() {
 			Version: version, UI: web.Dist(), Logger: logger,
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
 			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"), Box: box,
-			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo,
+			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo, Hits: hitsDB,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

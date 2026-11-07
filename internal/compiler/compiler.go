@@ -47,6 +47,9 @@ type Settings struct {
 	// GeoIPReady says whether it exists. Country rules need both.
 	GeoIPDB    string
 	GeoIPReady bool
+	// AccessLogFile, if set, makes Caddy write a JSON access log of every
+	// request there, which CPM ingests for the dashboard (spec F5).
+	AccessLogFile string
 	// TLSLogFile, if set, makes Caddy also write its certificate
 	// management logs there as JSON, so CPM can show why a certificate
 	// failed (spec F2).
@@ -175,15 +178,29 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 	if len(policies) > 0 {
 		cfg["apps"].(obj)["tls"] = obj{"automation": obj{"policies": policies}}
 	}
+	logs := obj{}
 	if s.TLSLogFile != "" {
-		cfg["logging"] = obj{"logs": obj{
-			// Caddy's own default log (stderr) stays as it is.
-			"cpm_tls": obj{
-				"writer":  obj{"output": "file", "filename": s.TLSLogFile, "roll_size_mb": 5, "roll_keep": 2},
-				"encoder": obj{"format": "json"},
-				"include": []string{"tls.obtain", "tls.renew", "tls.issuance"},
-			},
-		}}
+		logs["cpm_tls"] = obj{
+			"writer":  obj{"output": "file", "filename": s.TLSLogFile, "roll_size_mb": 5, "roll_keep": 2},
+			"encoder": obj{"format": "json"},
+			"include": []string{"tls.obtain", "tls.renew", "tls.issuance"},
+		}
+	}
+	if s.AccessLogFile != "" {
+		servers := cfg["apps"].(obj)["http"].(obj)["servers"].(obj)
+		for _, name := range []string{HTTPServer, HTTPSServer} {
+			servers[name].(obj)["logs"] = obj{"default_logger_name": "cpm_access"}
+		}
+		logs["cpm_access"] = obj{
+			"writer":  obj{"output": "file", "filename": s.AccessLogFile, "roll_size_mb": 100, "roll_keep": 3},
+			"encoder": obj{"format": "json"},
+			"include": []string{"http.log.access.cpm_access"},
+		}
+		// Keep access logs out of Caddy's stderr log.
+		logs["default"] = obj{"exclude": []string{"http.log.access.cpm_access"}}
+	}
+	if len(logs) > 0 {
+		cfg["logging"] = obj{"logs": logs}
 	}
 
 	var buf bytes.Buffer
@@ -503,7 +520,9 @@ func splitRules(rules []string) (ips, countries []string) {
 // blocked (read by the log ingester), then responds.
 func blockHandlers(response, reason string) []any {
 	return []any{
-		obj{"handler": "log_append", "key": "cpm_blocked", "value": reason},
+		// early: add the field before responding, so it's logged even
+		// when the connection is dropped (abort).
+		obj{"handler": "log_append", "key": "cpm_blocked", "value": reason, "early": true},
 		blockHandler(response),
 	}
 }

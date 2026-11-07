@@ -9,6 +9,7 @@ import { HostEditor, HostList } from './hosts'
 import { AccountPage, EnrollRequired } from './account'
 import { AuditPage, UsersPage } from './users'
 import { ImportPage } from './importer'
+import { Dashboard } from './dashboard'
 
 // Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
 function useRoute(): string {
@@ -145,6 +146,7 @@ function App() {
     body = <History canEdit={canEdit} onRolledBack={refreshPending} />
   else if (route === '/status' || route === '/health')
     body = <HealthPage isAdmin={user.role === 'admin'} />
+  else if (route === '/dashboard') body = <Dashboard canEdit={canEdit} />
   else if (route === '/certificates') body = <Certificates canEdit={canEdit} />
   else if (route === '/dns')
     body = (
@@ -162,6 +164,7 @@ function App() {
     )
 
   const nav = [
+    ['/dashboard', 'Dashboard'],
     ['/hosts', 'Hosts'],
     ['/access', 'Access'],
     ['/dns', 'DNS'],

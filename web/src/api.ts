@@ -311,6 +311,70 @@ export type MySQLConfig = {
   database: string
 }
 
+export type StatsPoint = {
+  t: string
+  requests: number
+  bytes: number
+  errors: number
+  blocked: number
+}
+
+export type StatsOverview = {
+  overview: {
+    series: StatsPoint[]
+    requests: number
+    bytes: number
+    errors: number
+    blocked: number
+    bucket: number
+  }
+  latency: { p50_ms: number; p95_ms: number; samples: number }
+}
+
+export type TopRow = {
+  key: string
+  count: number
+  blocked: number
+  country?: string
+}
+
+export type HitRow = {
+  id: number
+  ts: string
+  host: string
+  client_ip: string
+  country: string
+  method: string
+  path: string
+  status: number
+  bytes: number
+  duration_ms: number
+  user_agent: string
+  matched: 'allowed' | 'blocked' | 'honeypot'
+  reason: string
+  reason_text?: string
+}
+
+export type IPDetail = {
+  ip: string
+  country: string
+  total: number
+  blocked: number
+  hosts: TopRow[]
+  recent: HitRow[]
+  never_ban: boolean
+  banned?: boolean
+}
+
+export type StatsScope = { range: string; host?: number; folder?: number }
+
+function scopeQuery(s: StatsScope, extra: Record<string, string> = {}) {
+  const p = new URLSearchParams({ range: s.range, ...extra })
+  if (s.host) p.set('host', String(s.host))
+  if (s.folder) p.set('folder', String(s.folder))
+  return p.toString()
+}
+
 export class ApiError extends Error {
   status: number
   code: string
@@ -474,6 +538,20 @@ export const api = {
     request<void>('DELETE', `/api/never-ban?cidr=${encodeURIComponent(cidr)}`),
   whoami: () => request<{ ip: string }>('GET', '/api/whoami'),
   countries: () => request<Country[]>('GET', '/api/countries'),
+  statsOverview: (s: StatsScope) =>
+    request<StatsOverview>('GET', `/api/stats/overview?${scopeQuery(s)}`),
+  statsTop: (s: StatsScope, dim: string, limit = 10) =>
+    request<TopRow[]>(
+      'GET',
+      `/api/stats/top?${scopeQuery(s, { dim, limit: String(limit) })}`,
+    ),
+  statsTail: (s: StatsScope, after: number) =>
+    request<HitRow[]>(
+      'GET',
+      `/api/stats/tail?${scopeQuery(s, { after: String(after) })}`,
+    ),
+  statsIP: (ip: string) =>
+    request<IPDetail>('GET', `/api/stats/ip/${encodeURIComponent(ip)}`),
 
   alerts: () => request<Alert[]>('GET', '/api/alerts'),
   health: () => request<Health>('GET', '/api/health/details'),
