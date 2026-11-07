@@ -51,11 +51,17 @@ func TestAttempt(t *testing.T) {
 }
 
 func TestKeyCap(t *testing.T) {
-	f := New(5, time.Minute)
-	for i := 0; i < maxKeys+50; i++ {
-		f.Attempt(string(rune('a'+i%26)) + time.Duration(i).String())
+	f := New(2, time.Minute)
+	f.MaxKeys = 1000
+	f.Attempt("victim")
+	f.Attempt("victim") // locked out
+	for i := 0; i < 5000; i++ {
+		f.Attempt(time.Duration(i).String())
 	}
-	if len(f.hits) > maxKeys {
-		t.Fatalf("keys = %d, want at most %d", len(f.hits), maxKeys)
+	if len(f.hits) > f.MaxKeys {
+		t.Fatalf("keys = %d, want at most %d", len(f.hits), f.MaxKeys)
+	}
+	if ok, _ := f.Attempt("victim"); ok {
+		t.Fatal("a locked-out key was evicted")
 	}
 }

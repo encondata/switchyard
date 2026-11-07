@@ -87,6 +87,8 @@ func New(opts Options) http.Handler {
 		ipFailures:    ratelimit.New(10, 15*time.Minute),
 		userFailures:  ratelimit.New(5, 15*time.Minute),
 	}
+	// Usernames come from unauthenticated requests: track fewer of them.
+	s.userFailures.MaxKeys = 10_000
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
