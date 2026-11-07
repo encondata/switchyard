@@ -1,0 +1,60 @@
+// Package caddyadmin talks to Caddy's admin API. CPM only ever reaches it
+// over a unix socket (spec §2, principle 5).
+package caddyadmin
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"time"
+)
+
+// Client calls the Caddy admin API over a unix socket.
+type Client struct {
+	socket string
+	http   *http.Client
+}
+
+// New returns a client for the admin socket at path.
+func New(socket string) *Client {
+	dialer := &net.Dialer{Timeout: 3 * time.Second}
+	return &Client{
+		socket: socket,
+		http: &http.Client{
+			Timeout: 10 * time.Second,
+			Transport: &http.Transport{
+				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+					return dialer.DialContext(ctx, "unix", socket)
+				},
+			},
+		},
+	}
+}
+
+// Socket returns the socket path the client uses.
+func (c *Client) Socket() string { return c.socket }
+
+// Config returns Caddy's running config as raw JSON (GET /config/).
+func (c *Client) Config(ctx context.Context) ([]byte, error) {
+	// Caddy checks the Host header on admin requests; "localhost" is accepted
+	// for unix-socket listeners.
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://localhost/config/", nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("caddy admin: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
+	if err != nil {
+		return nil, fmt.Errorf("caddy admin: reading response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("caddy admin: GET /config/: HTTP %d: %s", resp.StatusCode, body)
+	}
+	return body, nil
+}

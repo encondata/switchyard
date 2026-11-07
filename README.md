@@ -31,6 +31,23 @@ touches `caddy/`, the **Caddy image** workflow tests the image and publishes
 it for amd64 and arm64 as `ghcr.io/encondata/cpm-caddy`, tagged `latest`,
 the Caddy version (e.g. `v2.11.9`), and `<caddy version>-<git sha>`.
 
+## Run it locally with Docker
+
+```bash
+docker compose up -d --build
+```
+
+- CPM UI: `http://<host>:8080` (listens on 0.0.0.0)
+- Caddy: ports 80 and 443 on 0.0.0.0. With no hosts configured yet, it
+  answers 404 "No site is configured for this address."
+- First sign-in: **admin / 123456**. You must choose a new password before
+  anything else works.
+
+Caddy starts from `caddy/bootstrap.json`, which puts its admin API on the
+unix socket `/run/caddy/admin.sock` (shared with CPM through a volume) and
+nothing else. To start over with a fresh database (and the default admin
+again): `docker compose down && docker volume rm cpm_cpm-data`.
+
 ## Requirements
 
 - Go (version in `go.mod`)

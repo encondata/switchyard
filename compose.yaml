@@ -1,0 +1,62 @@
+# CaddyProxyManager: Caddy + CPM on one host (spec §2, Deployment).
+#
+#   docker compose up -d --build
+#
+# Caddy answers on 0.0.0.0:80 and :443; the CPM UI on 0.0.0.0:8080.
+# Caddy's admin API is only on a unix socket shared with CPM; port 2019 is
+# never published.
+
+name: cpm
+
+services:
+  caddy:
+    build: ./caddy
+    image: cpm-caddy:local
+    restart: unless-stopped
+    command: ["caddy", "run", "--config", "/etc/caddy/bootstrap.json"]
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+      - "0.0.0.0:443:443/udp" # HTTP/3
+    volumes:
+      - ./caddy/bootstrap.json:/etc/caddy/bootstrap.json:ro
+      - caddy-admin:/run/caddy
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    healthcheck:
+      # Healthy once the admin socket is up (the default site answers 404,
+      # which wget would count as a failure).
+      test: ["CMD-SHELL", "test -S /run/caddy/admin.sock"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+
+  cpm:
+    build:
+      context: .
+      args:
+        VERSION: local
+    image: cpm:local
+    restart: unless-stopped
+    depends_on:
+      caddy:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:8080:8080"
+    environment:
+      CPM_LISTEN: 0.0.0.0:8080
+      CPM_DATA_DIR: /data
+      CPM_CADDY_ADMIN_SOCKET: /run/caddy/admin.sock
+    volumes:
+      - cpm-data:/data
+      - caddy-admin:/run/caddy
+      - caddy-data:/caddy-data:ro
+      - caddy-logs:/var/log/caddy:ro
+
+volumes:
+  caddy-admin:
+  caddy-data:
+  caddy-config:
+  caddy-logs:
+  cpm-data:
