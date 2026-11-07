@@ -107,3 +107,62 @@ func TestHostsNeedSignIn(t *testing.T) {
 }
 
 func itoa(i int) string { return strconv.Itoa(i) }
+
+func TestFoldersPoliciesAPI(t *testing.T) {
+	fc := &fakeCaddy{running: `{}`}
+	c := signedIn(t, fc)
+
+	code, f := c.do("POST", "/api/folders", `{"name":"Internal"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create folder = %d %v", code, f)
+	}
+	fid := itoa(int(f["id"].(float64)))
+
+	code, p := c.do("POST", "/api/policies", `{"name":"LAN only","mode":"allow_only","rules":["10.0.0.0/8"]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create policy = %d %v", code, p)
+	}
+	pid := itoa(int(p["id"].(float64)))
+	if code, body := c.do("POST", "/api/policies", `{"name":"x","mode":"deny","rules":["US"]}`); code != 400 || body["fields"] == nil {
+		t.Fatalf("country rule = %d %v", code, body)
+	}
+
+	if code, _ := c.do("PUT", "/api/folders/"+fid, `{"name":"Internal","policy_ids":[`+pid+`]}`); code != 200 {
+		t.Fatalf("attach policy = %d", code)
+	}
+	code, h := c.do("POST", "/api/hosts", `{"type":"proxy","enabled":true,"domains":["app.localhost"],
+		"tls_mode":"off","upstreams":[{"host":"whoami"}],"folder_id":`+fid+`}`)
+	if code != http.StatusCreated {
+		t.Fatalf("create host in folder = %d %v", code, h)
+	}
+
+	// The folder's policy reaches the compiled config.
+	if code, _ := c.do("POST", "/api/config/apply", ""); code != 200 || !strings.Contains(fc.running, "10.0.0.0/8") {
+		t.Fatalf("apply = %d; config has policy: %v", code, strings.Contains(fc.running, "10.0.0.0/8"))
+	}
+
+	if code, body := c.do("DELETE", "/api/policies/"+pid, ""); code != http.StatusConflict {
+		t.Fatalf("delete used policy = %d %v", code, body)
+	}
+	if code, body := c.do("DELETE", "/api/folders/"+fid, ""); code != http.StatusConflict {
+		t.Fatalf("delete non-empty folder = %d %v", code, body)
+	}
+
+	if code, body := c.do("POST", "/api/folders/"+fid+"/enabled", `{"enabled":false}`); code != 200 || body["hosts_changed"].(float64) != 1 {
+		t.Fatalf("disable folder = %d %v", code, body)
+	}
+	hid := itoa(int(h["id"].(float64)))
+	if code, _ := c.do("POST", "/api/hosts/"+hid+"/move", `{"folder_id":null}`); code != 200 {
+		t.Fatalf("move host = %d", code)
+	}
+
+	if code, _ := c.do("POST", "/api/never-ban", `{"cidr":"192.168.1.0/24","note":"office"}`); code != http.StatusCreated {
+		t.Fatalf("add never-ban = %d", code)
+	}
+	if code, _ := c.do("DELETE", "/api/never-ban?cidr=192.168.1.0/24", ""); code != http.StatusNoContent {
+		t.Fatalf("delete never-ban = %d", code)
+	}
+	if code, body := c.do("GET", "/api/whoami", ""); code != 200 || body["ip"] != "127.0.0.1" {
+		t.Fatalf("whoami = %d %v", code, body)
+	}
+}

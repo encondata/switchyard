@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api, ApiError, type Preview, type User } from './api'
 import { ChangePassword, Login } from './auth'
 import { Changes, History, StatusPage } from './config'
+import { AccessPage } from './access'
 import { HostEditor, HostList } from './hosts'
 
 // Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
@@ -30,6 +31,12 @@ function App() {
         if (!(err instanceof ApiError && err.status === 401)) console.error(err)
       })
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    const out = () => setUser(null)
+    window.addEventListener('cpm:signed-out', out)
+    return () => window.removeEventListener('cpm:signed-out', out)
   }, [])
 
   const ready = !!user && !user.must_change_password
@@ -69,9 +76,17 @@ function App() {
         }
       />
     )
-  else if (route === '/hosts/new')
-    body = <HostEditor id={null} onSaved={() => (location.hash = '#/hosts')} />
-  else if (route.startsWith('/hosts/'))
+  else if (route.startsWith('/hosts/new')) {
+    const folder = new URLSearchParams(route.split('?')[1] ?? '').get('folder')
+    body = (
+      <HostEditor
+        key={route}
+        id={null}
+        folderId={folder ? Number(folder) : null}
+        onSaved={() => (location.hash = '#/hosts')}
+      />
+    )
+  } else if (route.startsWith('/hosts/'))
     body = (
       <HostEditor
         key={route}
@@ -84,10 +99,13 @@ function App() {
   else if (route === '/history')
     body = <History canEdit={canEdit} onRolledBack={refreshPending} />
   else if (route === '/status') body = <StatusPage />
+  else if (route === '/access')
+    body = <AccessPage canEdit={canEdit} onChanged={refreshPending} />
   else body = <HostList canEdit={canEdit} onChanged={refreshPending} />
 
   const nav = [
     ['/hosts', 'Hosts'],
+    ['/access', 'Access'],
     ['/changes', 'Review & apply'],
     ['/history', 'History'],
     ['/status', 'Status'],

@@ -194,9 +194,12 @@ func (s *srv) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 // there was one.
 func (s *srv) storeError(w http.ResponseWriter, err error) bool {
 	var verr store.ValidationError
+	var conflict store.ConflictError
 	switch {
 	case err == nil:
 		return false
+	case errors.As(err, &conflict):
+		writeError(w, http.StatusConflict, "conflict", conflict.Error())
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")
 	case errors.As(err, &verr):

@@ -63,7 +63,7 @@ var cases = map[string][]store.Host{
 func TestGolden(t *testing.T) {
 	for name, hosts := range cases {
 		t.Run(name, func(t *testing.T) {
-			got, err := Compile(settings, hosts)
+			got, err := Compile(settings, hosts, store.AccessState{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -86,12 +86,12 @@ func TestGolden(t *testing.T) {
 }
 
 func TestDeterministic(t *testing.T) {
-	a, _ := Compile(settings, cases["mixed"])
+	a, _ := Compile(settings, cases["mixed"], store.AccessState{})
 	reversed := append([]store.Host(nil), cases["mixed"]...)
 	for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
 		reversed[i], reversed[j] = reversed[j], reversed[i]
 	}
-	b, _ := Compile(settings, reversed)
+	b, _ := Compile(settings, reversed, store.AccessState{})
 	if !bytes.Equal(a, b) {
 		t.Fatal("host order changed the output")
 	}
@@ -101,7 +101,7 @@ func TestDeterministic(t *testing.T) {
 // `caddy validate` doesn't catch it), so check every case.
 func TestUniqueIDs(t *testing.T) {
 	for name, hosts := range cases {
-		out, err := Compile(settings, hosts)
+		out, err := Compile(settings, hosts, store.AccessState{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -134,7 +134,64 @@ func TestUniqueIDs(t *testing.T) {
 }
 
 func TestAdminListenRequired(t *testing.T) {
-	if _, err := Compile(Settings{}, nil); err == nil {
+	if _, err := Compile(Settings{}, nil, store.AccessState{}); err == nil {
 		t.Fatal("expected an error without AdminListen")
+	}
+}
+
+// accessState: folder "Internal" (allow-only LAN) > "Tools" (deny
+// bad range, abort), plus a never-ban office address.
+func accessState() store.AccessState {
+	internal, tools := int64(10), int64(11)
+	return store.AccessState{
+		Folders: map[int64]store.Folder{
+			internal: {ID: internal, Name: "Internal", PolicyIDs: []int64{1}},
+			tools:    {ID: tools, Name: "Tools", ParentID: &internal, PolicyIDs: []int64{2}},
+		},
+		Policies: map[int64]store.AccessPolicy{
+			1: {ID: 1, Name: "LAN only", Mode: store.PolicyAllowOnly, Response: store.Respond403, Rules: []string{"10.0.0.0/8", "192.168.0.0/16"}},
+			2: {ID: 2, Name: "Bad range", Mode: store.PolicyDeny, Response: store.RespondAbort, Rules: []string{"10.66.0.0/16"}},
+			3: {ID: 3, Name: "VPN", Mode: store.PolicyAllowOnly, Response: store.RespondAbort, Rules: []string{"100.64.0.0/10"}},
+		},
+		NeverBan: []string{"203.0.113.7"},
+	}
+}
+
+func accessHosts() []store.Host {
+	tools := int64(11)
+	return []store.Host{
+		// Inherits LAN-only (from Internal) and Bad range (from Tools), and
+		// adds VPN itself: allow-only ranges are combined, abort wins.
+		normalized(store.Host{
+			ID: 1, Type: store.HostProxy, Enabled: true, Domains: []string{"tools.localhost"},
+			Upstreams: []store.Upstream{{Host: "whoami"}}, TLSMode: store.TLSOff,
+			FolderID: &tools, PolicyIDs: []int64{3},
+		}),
+		// No folder, no policies: no access routes.
+		normalized(store.Host{
+			ID: 2, Type: store.HostProxy, Enabled: true, Domains: []string{"open.localhost"},
+			Upstreams: []store.Upstream{{Host: "whoami"}}, TLSMode: store.TLSOff,
+		}),
+	}
+}
+
+func TestGoldenAccess(t *testing.T) {
+	got, err := Compile(settings, accessHosts(), accessState())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "access.json")
+	if *update {
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("access config differs from %s; run with -update if intended.\n%s", path, got)
 	}
 }

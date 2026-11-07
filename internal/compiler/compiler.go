@@ -11,6 +11,9 @@
 //     is off, then a catch-all 404
 //   - server "cpm_https" on :443: every TLS host, then a catch-all 404.
 //     Caddy's automatic redirects are disabled because CPM writes them.
+//   - access rules (spec F4) sit at the top of each host's subroute, in
+//     order: deny policies, then allow-only policies. Every block route
+//     carries "not: never-ban", so never-ban addresses skip all rules.
 //   - tls automation: an internal-CA policy for hosts with TLS "internal";
 //     everything else uses Caddy's default ACME issuers. On-demand TLS is
 //     never enabled.
@@ -44,7 +47,7 @@ type obj = map[string]any
 
 // Compile builds the full Caddy config for the given hosts. Disabled hosts
 // are left out.
-func Compile(s Settings, hosts []store.Host) ([]byte, error) {
+func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, error) {
 	if s.AdminListen == "" {
 		return nil, fmt.Errorf("compiler: admin listen address is required")
 	}
@@ -59,7 +62,7 @@ func Compile(s Settings, hosts []store.Host) ([]byte, error) {
 	var httpRoutes, httpsRoutes []any
 	var internalSubjects []string
 	for _, h := range enabled {
-		route, err := hostRoute(h)
+		route, err := hostRoute(h, access)
 		if err != nil {
 			return nil, fmt.Errorf("compiler: host %d: %w", h.ID, err)
 		}
@@ -71,7 +74,7 @@ func Compile(s Settings, hosts []store.Host) ([]byte, error) {
 		if h.ForceHTTPS {
 			httpRoutes = append(httpRoutes, redirectToHTTPSRoute(h))
 		} else {
-			plain, _ := hostRoute(h) // same handlers, also on :80
+			plain, _ := hostRoute(h, access) // same handlers, also on :80
 			plain["@id"] = fmt.Sprintf("cpm_host_%d_http", h.ID)
 			httpRoutes = append(httpRoutes, plain)
 		}
@@ -129,7 +132,7 @@ func Compile(s Settings, hosts []store.Host) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func hostRoute(h store.Host) (obj, error) {
+func hostRoute(h store.Host, access store.AccessState) (obj, error) {
 	var handlers []any
 	if h.HSTS && h.TLSMode != store.TLSOff {
 		handlers = append(handlers, obj{
@@ -170,7 +173,7 @@ func hostRoute(h store.Host) (obj, error) {
 	return obj{
 		"@id":      fmt.Sprintf("cpm_host_%d", h.ID),
 		"match":    []any{obj{"host": h.Domains}},
-		"handle":   []any{obj{"handler": "subroute", "routes": []any{obj{"handle": handlers}}}},
+		"handle":   []any{obj{"handler": "subroute", "routes": append(accessRoutes(h, access), obj{"handle": handlers})}},
 		"terminal": true,
 	}, nil
 }
@@ -229,4 +232,65 @@ func trimSlash(s string) string {
 		s = s[:len(s)-1]
 	}
 	return s
+}
+
+// accessRoutes returns the block routes for a host's effective policies.
+//
+// Evaluation order (spec F4): never-ban → allow; deny match → block;
+// allow-only rules exist and none match → block; otherwise allow. Bans
+// (step 2) arrive with the honeypot.
+func accessRoutes(h store.Host, access store.AccessState) []any {
+	var never []any
+	if len(access.NeverBan) > 0 {
+		never = []any{obj{"client_ip": obj{"ranges": access.NeverBan}}}
+	}
+	var routes []any
+	var allow []string
+	allowResponse := store.Respond403
+	for _, p := range access.EffectivePolicies(h) {
+		switch p.Mode {
+		case store.PolicyDeny:
+			m := obj{"client_ip": obj{"ranges": p.Rules}}
+			if never != nil {
+				m["not"] = never
+			}
+			routes = append(routes, obj{"match": []any{m}, "handle": []any{blockHandler(p.Response)}})
+		case store.PolicyAllowOnly:
+			allow = append(allow, p.Rules...)
+			if p.Response == store.RespondAbort {
+				allowResponse = store.RespondAbort // the stricter response wins
+			}
+		}
+	}
+	if len(allow) > 0 {
+		// Block when the client is in neither the allowed ranges nor the
+		// never-ban list: not(allowed OR never-ban).
+		sets := append([]any{obj{"client_ip": obj{"ranges": dedupe(allow)}}}, never...)
+		routes = append(routes, obj{"match": []any{obj{"not": sets}}, "handle": []any{blockHandler(allowResponse)}})
+	}
+	return routes
+}
+
+func blockHandler(response string) obj {
+	if response == store.RespondAbort {
+		return obj{"handler": "static_response", "abort": true}
+	}
+	return obj{
+		"handler":     "static_response",
+		"status_code": "403",
+		"headers":     obj{"Content-Type": []string{"text/plain; charset=utf-8"}},
+		"body":        "Access denied.\n",
+	}
+}
+
+func dedupe(in []string) []string {
+	out := make([]string, 0, len(in))
+	seen := map[string]bool{}
+	for _, v := range in {
+		if !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
 }

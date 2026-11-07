@@ -44,8 +44,13 @@ type Host struct {
 	RedirectCode  int        `json:"redirect_code"`
 	PreservePath  bool       `json:"preserve_path"`
 	Notes         string     `json:"notes"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	// FolderID is the folder the host sits in; nil means "Unfiled".
+	FolderID *int64 `json:"folder_id"`
+	// PolicyIDs are access policies attached to the host itself. The host
+	// also gets its folders' policies (see EffectivePolicies).
+	PolicyIDs []int64   `json:"policy_ids"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // Upstream is a backend a proxy host forwards to.
@@ -125,6 +130,10 @@ func (h *Host) Normalize() {
 		h.Upstreams = []Upstream{}
 	}
 	h.RedirectTo = strings.TrimSpace(h.RedirectTo)
+	h.PolicyIDs = uniqueIDs(h.PolicyIDs)
+	if h.FolderID != nil && *h.FolderID <= 0 {
+		h.FolderID = nil
+	}
 	if h.TLSMode == TLSOff {
 		h.ForceHTTPS = false
 		h.HSTS = false
@@ -236,16 +245,22 @@ func checkDomain(d, tlsMode string) string {
 var ErrDomainTaken = errors.New("domain already used by another host")
 
 const hostColumns = `id, type, enabled, upstreams, load_balancing, tls_mode, force_https, hsts,
-	compression, redirect_to, redirect_code, preserve_path, notes, created_at, updated_at`
+	compression, redirect_to, redirect_code, preserve_path, notes, folder_id, created_at, updated_at`
 
 func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	var h Host
 	var upstreams string
+	var folder sql.NullInt64
 	err := row.Scan(&h.ID, &h.Type, &h.Enabled, &upstreams, &h.LoadBalancing, &h.TLSMode, &h.ForceHTTPS,
-		&h.HSTS, &h.Compression, &h.RedirectTo, &h.RedirectCode, &h.PreservePath, &h.Notes, &h.CreatedAt, &h.UpdatedAt)
+		&h.HSTS, &h.Compression, &h.RedirectTo, &h.RedirectCode, &h.PreservePath, &h.Notes, &folder,
+		&h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return h, err
 	}
+	if folder.Valid {
+		h.FolderID = &folder.Int64
+	}
+	h.PolicyIDs = []int64{}
 	if err := json.Unmarshal([]byte(upstreams), &h.Upstreams); err != nil {
 		return h, fmt.Errorf("host %d: bad upstreams JSON: %w", h.ID, err)
 	}
@@ -288,10 +303,27 @@ func (s *Store) ListHosts(ctx context.Context) ([]Host, error) {
 			hosts[i].Domains = append(hosts[i].Domains, d)
 		}
 	}
-	if hosts == nil {
-		hosts = []Host{}
+	if err := drows.Err(); err != nil {
+		return nil, err
 	}
-	return hosts, drows.Err()
+	if hosts == nil {
+		return []Host{}, nil
+	}
+	prows, err := s.db.QueryContext(ctx, `SELECT host_id, policy_id FROM host_policies ORDER BY host_id, policy_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = prows.Close() }()
+	for prows.Next() {
+		var hid, pid int64
+		if err := prows.Scan(&hid, &pid); err != nil {
+			return nil, err
+		}
+		if i, ok := byID[hid]; ok {
+			hosts[i].PolicyIDs = append(hosts[i].PolicyIDs, pid)
+		}
+	}
+	return hosts, prows.Err()
 }
 
 // GetHost returns one host.
@@ -316,7 +348,11 @@ func (s *Store) GetHost(ctx context.Context, id int64) (Host, error) {
 		}
 		h.Domains = append(h.Domains, d)
 	}
-	return h, rows.Err()
+	if err := rows.Err(); err != nil {
+		return Host{}, err
+	}
+	h.PolicyIDs, err = queryIDs(ctx, s.db, `SELECT policy_id FROM host_policies WHERE host_id = ? ORDER BY policy_id`, id)
+	return h, err
 }
 
 // SaveHost creates (ID 0) or updates a host, after normalizing and
@@ -343,13 +379,16 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 		return Host{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if err := checkRefs(ctx, tx, h.FolderID, h.PolicyIDs); err != nil {
+		return Host{}, err
+	}
 
 	args := []any{h.Type, h.Enabled, string(upstreams), h.LoadBalancing, h.TLSMode, h.ForceHTTPS, h.HSTS,
-		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes}
+		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID}
 	if h.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO hosts (type, enabled, upstreams, load_balancing, tls_mode,
-			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
+			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes, folder_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 		if err != nil {
 			return Host{}, err
 		}
@@ -359,7 +398,8 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 	} else {
 		if _, err := tx.ExecContext(ctx, `UPDATE hosts SET type = ?, enabled = ?, upstreams = ?, load_balancing = ?,
 			tls_mode = ?, force_https = ?, hsts = ?, compression = ?, redirect_to = ?, redirect_code = ?,
-			preserve_path = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, append(args, h.ID)...); err != nil {
+			preserve_path = ?, notes = ?, folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			append(args, h.ID)...); err != nil {
 			return Host{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM host_domains WHERE host_id = ?`, h.ID); err != nil {
@@ -379,6 +419,9 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 			d, h.ID, i); err != nil {
 			return Host{}, err
 		}
+	}
+	if err := setLinks(ctx, tx, "host_policies", "host_id", h.ID, h.PolicyIDs); err != nil {
+		return Host{}, err
 	}
 	action := "create"
 	if before != nil {

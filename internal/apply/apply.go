@@ -61,7 +61,11 @@ func (s *Service) Build(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return compiler.Compile(s.Settings, hosts)
+	access, err := s.Store.LoadAccessState(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return compiler.Compile(s.Settings, hosts, access)
 }
 
 // Preview compares the database's config with Caddy's running config.

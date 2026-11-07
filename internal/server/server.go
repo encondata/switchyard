@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"path"
@@ -83,6 +84,21 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("GET /api/config/versions", s.requireUser(false, s.handleListVersions))
 		mux.HandleFunc("GET /api/config/versions/{n}", s.requireUser(false, s.handleGetVersion))
 		mux.HandleFunc("POST /api/config/versions/{n}/rollback", s.requireEditor(s.handleRollback))
+
+		mux.HandleFunc("GET /api/folders", s.requireUser(false, s.handleListFolders))
+		mux.HandleFunc("POST /api/folders", s.requireEditor(s.handleSaveFolder))
+		mux.HandleFunc("PUT /api/folders/{id}", s.requireEditor(s.handleSaveFolder))
+		mux.HandleFunc("DELETE /api/folders/{id}", s.requireEditor(s.handleDeleteFolder))
+		mux.HandleFunc("POST /api/folders/{id}/enabled", s.requireEditor(s.handleFolderEnabled))
+		mux.HandleFunc("POST /api/hosts/{id}/move", s.requireEditor(s.handleMoveHost))
+		mux.HandleFunc("GET /api/policies", s.requireUser(false, s.handleListPolicies))
+		mux.HandleFunc("POST /api/policies", s.requireEditor(s.handleSavePolicy))
+		mux.HandleFunc("PUT /api/policies/{id}", s.requireEditor(s.handleSavePolicy))
+		mux.HandleFunc("DELETE /api/policies/{id}", s.requireEditor(s.handleDeletePolicy))
+		mux.HandleFunc("GET /api/never-ban", s.requireUser(false, s.handleListNeverBan))
+		mux.HandleFunc("POST /api/never-ban", s.requireEditor(s.handleAddNeverBan))
+		mux.HandleFunc("DELETE /api/never-ban", s.requireEditor(s.handleDeleteNeverBan))
+		mux.HandleFunc("GET /api/whoami", s.requireUser(false, s.handleWhoAmI))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")
@@ -197,4 +213,14 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// clientIP is the TCP peer address. CPM isn't behind a proxy, so
+// X-Forwarded-For is ignored (it could be forged).
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

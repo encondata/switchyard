@@ -35,6 +35,8 @@ export type Host = {
   redirect_code: number
   preserve_path: boolean
   notes: string
+  folder_id: number | null
+  policy_ids: number[]
   created_at?: string
   updated_at?: string
 }
@@ -51,6 +53,98 @@ export type CertStatus = {
 }
 
 export type HostView = Host & { certs: CertStatus[] }
+
+export type Folder = {
+  id: number
+  name: string
+  parent_id: number | null
+  sort: number
+  policy_ids: number[]
+  host_count: number
+}
+
+export type AccessPolicy = {
+  id: number
+  name: string
+  mode: 'allow_only' | 'deny'
+  response: '403' | 'abort'
+  rules: string[]
+  notes: string
+  folder_count: number
+  host_count: number
+}
+
+export type NeverBan = { cidr: string; note: string; created_at: string }
+
+/** A policy that applies to a host, and the folder it came from (null: the host itself). */
+export type EffectivePolicy = { policy: AccessPolicy; from: Folder | null }
+
+/** Mirrors store.AccessState.EffectivePolicies on the server. */
+export function effectivePolicies(
+  host: Pick<Host, 'folder_id' | 'policy_ids'>,
+  folders: Folder[],
+  policies: AccessPolicy[],
+): EffectivePolicy[] {
+  const byId = new Map(policies.map((p) => [p.id, p]))
+  const folderById = new Map(folders.map((f) => [f.id, f]))
+  const out: EffectivePolicy[] = []
+  const seen = new Set<number>()
+  const add = (ids: number[], from: Folder | null) => {
+    for (const id of ids) {
+      const p = byId.get(id)
+      if (p && !seen.has(id)) {
+        seen.add(id)
+        out.push({ policy: p, from })
+      }
+    }
+  }
+  add(host.policy_ids, null)
+  const visited = new Set<number>()
+  for (let fid = host.folder_id; fid != null && !visited.has(fid);) {
+    visited.add(fid)
+    const f = folderById.get(fid)
+    if (!f) break
+    add(f.policy_ids, f)
+    fid = f.parent_id
+  }
+  return out
+}
+
+/** Folders in tree order with their depth, for indented lists and selects. */
+export function folderTree(
+  folders: Folder[],
+): { folder: Folder; depth: number }[] {
+  const children = new Map<number | null, Folder[]>()
+  for (const f of folders) {
+    const k = f.parent_id ?? null
+    children.set(k, [...(children.get(k) ?? []), f])
+  }
+  const out: { folder: Folder; depth: number }[] = []
+  const walk = (parent: number | null, depth: number) => {
+    for (const f of children.get(parent) ?? []) {
+      out.push({ folder: f, depth })
+      walk(f.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
+}
+
+/** IDs of a folder and every folder below it. */
+export function folderAndBelow(id: number, folders: Folder[]): Set<number> {
+  const out = new Set([id])
+  let grew = true
+  while (grew) {
+    grew = false
+    for (const f of folders) {
+      if (f.parent_id != null && out.has(f.parent_id) && !out.has(f.id)) {
+        out.add(f.id)
+        grew = true
+      }
+    }
+  }
+  return out
+}
 
 export type ConfigVersion = {
   n: number
@@ -110,6 +204,14 @@ async function request<T>(
       message?: string
       fields?: Record<string, string>
     }
+    // Session gone (expired, signed out elsewhere, database reset): let the
+    // app return to the sign-in screen instead of showing errors on pages.
+    if (
+      res.status === 401 &&
+      err.error === 'not_signed_in' &&
+      path !== '/api/auth/me'
+    )
+      window.dispatchEvent(new Event('cpm:signed-out'))
     throw new ApiError(
       res.status,
       err.error ?? 'error',
@@ -148,6 +250,38 @@ export const api = {
     request<ConfigVersion>('GET', `/api/config/versions/${n}`),
   rollback: (n: number) =>
     request<ConfigVersion>('POST', `/api/config/versions/${n}/rollback`),
+
+  folders: () => request<Folder[]>('GET', '/api/folders'),
+  saveFolder: (f: Pick<Folder, 'id' | 'name' | 'parent_id' | 'policy_ids'>) =>
+    f.id
+      ? request<Folder>('PUT', `/api/folders/${f.id}`, f)
+      : request<Folder>('POST', '/api/folders', f),
+  deleteFolder: (id: number) => request<void>('DELETE', `/api/folders/${id}`),
+  setFolderEnabled: (id: number, enabled: boolean) =>
+    request<{ hosts_changed: number }>('POST', `/api/folders/${id}/enabled`, {
+      enabled,
+    }),
+  moveHost: (id: number, folder_id: number | null) =>
+    request<Host>('POST', `/api/hosts/${id}/move`, { folder_id }),
+
+  policies: () => request<AccessPolicy[]>('GET', '/api/policies'),
+  savePolicy: (
+    p: Pick<
+      AccessPolicy,
+      'id' | 'name' | 'mode' | 'response' | 'rules' | 'notes'
+    >,
+  ) =>
+    p.id
+      ? request<AccessPolicy>('PUT', `/api/policies/${p.id}`, p)
+      : request<AccessPolicy>('POST', '/api/policies', p),
+  deletePolicy: (id: number) => request<void>('DELETE', `/api/policies/${id}`),
+
+  neverBan: () => request<NeverBan[]>('GET', '/api/never-ban'),
+  addNeverBan: (cidr: string, note: string) =>
+    request<NeverBan>('POST', '/api/never-ban', { cidr, note }),
+  deleteNeverBan: (cidr: string) =>
+    request<void>('DELETE', `/api/never-ban?cidr=${encodeURIComponent(cidr)}`),
+  whoami: () => request<{ ip: string }>('GET', '/api/whoami'),
 }
 
 export function message(err: unknown): string {
@@ -170,5 +304,7 @@ export function newHost(): Host {
     redirect_code: 301,
     preserve_path: true,
     notes: '',
+    folder_id: null,
+    policy_ids: [],
   }
 }
