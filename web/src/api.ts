@@ -3,6 +3,30 @@ export type User = {
   username: string
   role: 'admin' | 'editor' | 'viewer'
   must_change_password: boolean
+  disabled: boolean
+  totp_enabled: boolean
+  must_enroll_2fa: boolean
+  created_at?: string
+}
+
+export type LoginResult = User | { totp_required: true; challenge: string }
+
+export type TwoFAStatus = {
+  enabled: boolean
+  required: boolean
+  backup_codes_left: number
+  available: boolean
+}
+
+export type AuditEntry = {
+  id: number
+  at: string
+  username: string
+  action: string
+  entity: string
+  entity_id: string
+  before: string
+  after: string
 }
 
 export type Status = {
@@ -309,7 +333,42 @@ async function request<T>(
 export const api = {
   me: () => request<User>('GET', '/api/auth/me'),
   login: (username: string, password: string) =>
-    request<User>('POST', '/api/auth/login', { username, password }),
+    request<LoginResult>('POST', '/api/auth/login', { username, password }),
+  loginTOTP: (challenge: string, code: string) =>
+    request<User>('POST', '/api/auth/totp', { challenge, code }),
+  twoFA: () => request<TwoFAStatus>('GET', '/api/auth/2fa'),
+  twoFABegin: () =>
+    request<{ secret: string; uri: string }>('POST', '/api/auth/2fa/begin'),
+  twoFAConfirm: (code: string) =>
+    request<{ backup_codes: string[] }>('POST', '/api/auth/2fa/confirm', {
+      code,
+    }),
+  twoFADisable: (password: string) =>
+    request<void>('POST', '/api/auth/2fa/disable', { password }),
+  users: () => request<User[]>('GET', '/api/users'),
+  createUser: (username: string, role: User['role'], password: string) =>
+    request<User>('POST', '/api/users', { username, role, password }),
+  updateUser: (id: number, role: User['role'], disabled: boolean) =>
+    request<User>('PUT', `/api/users/${id}`, { role, disabled }),
+  resetUserPassword: (id: number, password: string) =>
+    request<void>('POST', `/api/users/${id}/password`, { password }),
+  resetUser2FA: (id: number) =>
+    request<void>('POST', `/api/users/${id}/reset-2fa`),
+  deleteUser: (id: number) => request<void>('DELETE', `/api/users/${id}`),
+  settings: () =>
+    request<{ require_2fa: boolean; secrets_ready: boolean }>(
+      'GET',
+      '/api/settings',
+    ),
+  saveSettings: (require_2fa: boolean) =>
+    request<{ require_2fa: boolean }>('PUT', '/api/settings', { require_2fa }),
+  audit: (q: { before?: number; entity?: string; user?: string }) => {
+    const p = new URLSearchParams()
+    if (q.before) p.set('before', String(q.before))
+    if (q.entity) p.set('entity', q.entity)
+    if (q.user) p.set('user', q.user)
+    return request<AuditEntry[]>('GET', `/api/audit?${p.toString()}`)
+  },
   logout: () => request<void>('POST', '/api/auth/logout'),
   changePassword: (current_password: string, new_password: string) =>
     request<User>('POST', '/api/auth/password', {

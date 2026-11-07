@@ -6,6 +6,8 @@ import { AccessPage } from './access'
 import { DNSPage } from './dns'
 import { Certificates, HealthPage } from './ops'
 import { HostEditor, HostList } from './hosts'
+import { AccountPage, EnrollRequired } from './account'
+import { AuditPage, UsersPage } from './users'
 
 // Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
 function useRoute(): string {
@@ -41,7 +43,7 @@ function App() {
     return () => window.removeEventListener('cpm:signed-out', out)
   }, [])
 
-  const ready = !!user && !user.must_change_password
+  const ready = !!user && !user.must_change_password && !user.must_enroll_2fa
   const refreshPending = useCallback(() => {
     api
       .preview()
@@ -92,6 +94,25 @@ function App() {
         }
       />
     )
+  else if (user.must_enroll_2fa)
+    body = (
+      <EnrollRequired
+        onDone={() => {
+          void api.me().then(setUser)
+        }}
+      />
+    )
+  else if (route === '/account')
+    body = (
+      <AccountPage
+        user={user}
+        onChangePassword={() => setChangingPassword(true)}
+        onChanged={() => void api.me().then(setUser)}
+      />
+    )
+  else if (route === '/users' && user.role === 'admin')
+    body = <UsersPage me={user} />
+  else if (route === '/audit' && user.role === 'admin') body = <AuditPage />
   else if (route.startsWith('/hosts/new')) {
     const q = new URLSearchParams(route.split('?')[1] ?? '')
     const folder = q.get('folder')
@@ -138,6 +159,12 @@ function App() {
     ['/changes', 'Review & apply'],
     ['/history', 'History'],
     ['/health', 'Health'],
+    ...(user?.role === 'admin'
+      ? [
+          ['/users', 'Users'],
+          ['/audit', 'Audit'],
+        ]
+      : []),
   ]
 
   return (
@@ -162,14 +189,12 @@ function App() {
         )}
         {user && (
           <nav>
-            <span>{user.username}</span>
-            {!user.must_change_password && (
-              <button
-                className="link"
-                onClick={() => setChangingPassword(true)}
-              >
-                Change password
-              </button>
+            {ready ? (
+              <a href="#/account" title="Your account and two-factor sign-in">
+                {user.username}
+              </a>
+            ) : (
+              <span>{user.username}</span>
             )}
             <button className="link" onClick={signOut}>
               Sign out

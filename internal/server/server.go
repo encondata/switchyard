@@ -16,6 +16,7 @@ import (
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
 	"github.com/encondata/caddyproxymanager/internal/monitor"
+	"github.com/encondata/caddyproxymanager/internal/ratelimit"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
@@ -59,6 +60,9 @@ type srv struct {
 	monitor       *monitor.Monitor
 	dataDir       string
 	restart       func()
+	// Failed sign-ins: 10 per IP and 5 per username in 15 minutes.
+	ipFailures   *ratelimit.Failures
+	userFailures *ratelimit.Failures
 }
 
 // New returns the root HTTP handler.
@@ -78,6 +82,8 @@ func New(opts Options) http.Handler {
 		monitor:       opts.Monitor,
 		dataDir:       opts.DataDir,
 		restart:       opts.Restart,
+		ipFailures:    ratelimit.New(10, 15*time.Minute),
+		userFailures:  ratelimit.New(5, 15*time.Minute),
 	}
 
 	mux := http.NewServeMux()
@@ -86,6 +92,20 @@ func New(opts Options) http.Handler {
 	})
 	if s.store != nil {
 		mux.HandleFunc("POST /api/auth/login", s.handleLogin)
+		mux.HandleFunc("POST /api/auth/totp", s.handleLoginTOTP)
+		mux.HandleFunc("GET /api/auth/2fa", s.requireUser(true, s.handle2FAStatus))
+		mux.HandleFunc("POST /api/auth/2fa/begin", s.requireUser(true, s.handle2FABegin))
+		mux.HandleFunc("POST /api/auth/2fa/confirm", s.requireUser(true, s.handle2FAConfirm))
+		mux.HandleFunc("POST /api/auth/2fa/disable", s.requireUser(false, s.handle2FADisable))
+		mux.HandleFunc("GET /api/users", s.requireAdmin(s.handleListUsers))
+		mux.HandleFunc("POST /api/users", s.requireAdmin(s.handleCreateUser))
+		mux.HandleFunc("PUT /api/users/{id}", s.requireAdmin(s.handleUpdateUser))
+		mux.HandleFunc("POST /api/users/{id}/password", s.requireAdmin(s.handleResetUserPassword))
+		mux.HandleFunc("POST /api/users/{id}/reset-2fa", s.requireAdmin(s.handleResetUser2FA))
+		mux.HandleFunc("DELETE /api/users/{id}", s.requireAdmin(s.handleDeleteUser))
+		mux.HandleFunc("GET /api/settings", s.requireAdmin(s.handleGetSettings))
+		mux.HandleFunc("PUT /api/settings", s.requireAdmin(s.handlePutSettings))
+		mux.HandleFunc("GET /api/audit", s.requireAdmin(s.handleAudit))
 		mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 		mux.HandleFunc("GET /api/auth/me", s.requireUser(true, s.handleMe))
 		mux.HandleFunc("POST /api/auth/password", s.requireUser(true, s.handleChangePassword))

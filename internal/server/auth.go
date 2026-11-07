@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/encondata/caddyproxymanager/internal/store"
@@ -47,9 +50,16 @@ func (s *srv) requireUser(allowPending bool, next http.HandlerFunc) http.Handler
 			s.internalError(w, err)
 			return
 		}
-		if u.MustChangePassword && !allowPending {
-			writeError(w, http.StatusForbidden, "password_change_required", "Change your password to continue.")
-			return
+		u.MustEnroll2FA = !u.TOTPEnabled && s.require2FA(r)
+		if !allowPending {
+			if u.MustChangePassword {
+				writeError(w, http.StatusForbidden, "password_change_required", "Change your password to continue.")
+				return
+			}
+			if u.MustEnroll2FA {
+				writeError(w, http.StatusForbidden, "2fa_enrollment_required", "Set up two-factor sign-in to continue.")
+				return
+			}
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), userKey, u)))
 	}
@@ -63,9 +73,17 @@ func (s *srv) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
+	ipKey := "ip:" + clientIP(r)
+	userKey := "user:" + strings.ToLower(strings.TrimSpace(req.Username))
+	if s.rateLimited(w, ipKey, userKey) {
+		return
+	}
 	u, err := s.store.Authenticate(r.Context(), req.Username, req.Password)
 	if errors.Is(err, store.ErrBadCredentials) {
+		s.ipFailures.Fail(ipKey)
+		s.userFailures.Fail(userKey)
 		s.log.Warn("sign-in failed", "username", req.Username, "remote", r.RemoteAddr)
+		_ = s.store.AuditEvent(r.Context(), req.Username, "sign_in_failed", "session", 0, map[string]string{"ip": clientIP(r)})
 		writeError(w, http.StatusUnauthorized, "bad_credentials", "Wrong username or password.")
 		return
 	}
@@ -73,6 +91,74 @@ func (s *srv) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	s.userFailures.Reset(userKey)
+	if u.TOTPEnabled {
+		// Password is right; the second factor comes next.
+		challenge, err := s.store.CreateChallenge(r.Context(), u.ID)
+		if err != nil {
+			s.internalError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"totp_required": true, "challenge": challenge})
+		return
+	}
+	s.startSession(w, r, u)
+}
+
+// handleLoginTOTP finishes a sign-in with a TOTP or backup code.
+func (s *srv) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Challenge string `json:"challenge"`
+		Code      string `json:"code"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	ipKey := "ip:" + clientIP(r)
+	if s.rateLimited(w, ipKey) {
+		return
+	}
+	u, err := s.store.ChallengeUser(r.Context(), req.Challenge)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusUnauthorized, "challenge_expired", "That sign-in has expired. Enter your password again.")
+		return
+	}
+	if err != nil {
+		s.internalError(w, err)
+		return
+	}
+	if err := s.store.VerifySecondFactor(r.Context(), u.ID, req.Code, s.box); err != nil {
+		if errors.Is(err, store.ErrBadCredentials) {
+			s.ipFailures.Fail(ipKey)
+			s.log.Warn("2FA code rejected", "username", u.Username, "remote", r.RemoteAddr)
+			writeError(w, http.StatusUnauthorized, "bad_code", "That code isn't right. Try the current code from your app, or a backup code.")
+			return
+		}
+		s.internalError(w, err)
+		return
+	}
+	_ = s.store.DeleteChallenge(r.Context(), req.Challenge)
+	s.startSession(w, r, u)
+}
+
+func (s *srv) rateLimited(w http.ResponseWriter, keys ...string) bool {
+	for _, k := range keys {
+		lim := s.userFailures
+		if strings.HasPrefix(k, "ip:") {
+			lim = s.ipFailures
+		}
+		if blocked, wait := lim.Blocked(k); blocked {
+			mins := int(wait.Minutes()) + 1
+			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+			writeError(w, http.StatusTooManyRequests, "rate_limited",
+				fmt.Sprintf("Too many failed sign-ins. Try again in %d minute(s).", mins))
+			return true
+		}
+	}
+	return false
+}
+
+func (s *srv) startSession(w http.ResponseWriter, r *http.Request, u store.User) {
 	token, err := s.store.CreateSession(r.Context(), u.ID, sessionTTL)
 	if err != nil {
 		s.internalError(w, err)
@@ -89,7 +175,14 @@ func (s *srv) handleLogin(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteStrictMode,
 	})
 	s.log.Info("signed in", "username", u.Username, "remote", r.RemoteAddr)
+	_ = s.store.AuditEvent(r.Context(), u.Username, "sign_in", "session", u.ID, map[string]string{"ip": clientIP(r)})
+	u.MustEnroll2FA = s.require2FA(r) && !u.TOTPEnabled
 	writeJSON(w, http.StatusOK, u)
+}
+
+func (s *srv) require2FA(r *http.Request) bool {
+	v, _ := s.store.GetSetting(r.Context(), store.SettingRequire2FA)
+	return v == "true"
 }
 
 func (s *srv) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +231,7 @@ func (s *srv) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("password changed", "username", u.Username)
+	_ = s.store.AuditEvent(r.Context(), u.Username, "change_password", "user", u.ID, nil)
 	u.MustChangePassword = false
 	writeJSON(w, http.StatusOK, u)
 }

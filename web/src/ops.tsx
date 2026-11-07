@@ -168,7 +168,7 @@ export function HealthPage({ isAdmin }: { isAdmin: boolean }) {
     if (!file) return
     if (
       !confirm(
-        `Restore “${file.name}”? CPM replaces its database with this backup and restarts. The current database is kept next to it as a copy.`,
+        `Restore “${file.name}”? CPM replaces its database with this backup and restarts. Users and passwords go back to what they were in the backup, and everyone has to sign in again. The current database is kept next to it as a copy.`,
       )
     )
       return

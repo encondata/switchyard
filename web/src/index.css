@@ -641,3 +641,51 @@ details summary {
 .stack > .card {
   margin: 0;
 }
+
+.card.narrow-wide {
+  max-width: 560px;
+}
+
+.stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.qr {
+  width: 200px;
+  height: 200px;
+  image-rendering: pixelated;
+}
+
+.secret {
+  word-break: break-all;
+  user-select: all;
+}
+
+.code-input {
+  font-size: 1.3rem;
+  letter-spacing: 0.15em;
+  max-width: 14rem;
+}
+
+.backup-codes {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 0.35rem 2rem;
+  margin: 0;
+  padding: 0.75rem 1rem;
+  list-style: none;
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+
+.audit-diff {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.main-nav a {
+  white-space: nowrap;
+}

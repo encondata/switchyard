@@ -44,7 +44,8 @@ func main() {
 		os.Exit(1)
 	}
 	dbPath := filepath.Join(*dataDir, "cpm.db")
-	if err := swapInRestore(*dataDir, dbPath, logger); err != nil {
+	restored, err := swapInRestore(*dataDir, dbPath, logger)
+	if err != nil {
 		logger.Error("restoring backup", "err", err)
 		os.Exit(1)
 	}
@@ -54,6 +55,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = st.Close() }()
+	if restored {
+		// Sessions in the backup may have been revoked since it was taken.
+		if err := st.ClearSessions(ctx); err != nil {
+			logger.Error("clearing sessions after restore", "err", err)
+			os.Exit(1)
+		}
+		logger.Warn("backup restored; everyone must sign in again")
+	}
 	if created, err := st.EnsureDefaultAdmin(ctx); err != nil {
 		logger.Error("creating default admin", "err", err)
 		os.Exit(1)
@@ -150,22 +159,22 @@ func main() {
 
 // swapInRestore replaces the database with a staged backup (uploaded on
 // the health page), keeping the old one as cpm.db.before-restore-<time>.
-func swapInRestore(dataDir, dbPath string, log *slog.Logger) error {
+func swapInRestore(dataDir, dbPath string, log *slog.Logger) (bool, error) {
 	staged := filepath.Join(dataDir, server.RestoreFile)
 	if _, err := os.Stat(staged); err != nil {
-		return nil
+		return false, nil
 	}
 	if _, err := os.Stat(dbPath); err == nil {
 		old := dbPath + ".before-restore-" + time.Now().UTC().Format("20060102-150405")
 		if err := os.Rename(dbPath, old); err != nil {
-			return err
+			return false, err
 		}
 		for _, ext := range []string{"-wal", "-shm"} {
 			_ = os.Rename(dbPath+ext, old+ext)
 		}
 		log.Warn("restoring backup; previous database kept", "previous", old)
 	}
-	return os.Rename(staged, dbPath)
+	return true, os.Rename(staged, dbPath)
 }
 
 // noCaddy stands in when no admin socket is configured (e.g. `make run`
