@@ -32,3 +32,20 @@ func TestFailures(t *testing.T) {
 		t.Fatal("blocked after reset")
 	}
 }
+
+func TestAttempt(t *testing.T) {
+	f := New(2, time.Minute)
+	if ok, _ := f.Attempt("k"); !ok {
+		t.Fatal("first attempt refused")
+	}
+	if ok, _ := f.Attempt("k"); !ok {
+		t.Fatal("second attempt refused")
+	}
+	if ok, _ := f.Attempt("k"); ok {
+		t.Fatal("third attempt allowed: attempts must count before the result is known")
+	}
+	f.Undo("k")
+	if ok, _ := f.Attempt("k"); !ok {
+		t.Fatal("undo didn't free a slot")
+	}
+}

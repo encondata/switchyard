@@ -344,8 +344,16 @@ func (s *Store) VerifySecondFactor(ctx context.Context, userID int64, code strin
 		return err
 	}
 	if step, ok := totp.Verify(secret, code, time.Now(), lastStep); ok {
-		_, err := s.db.ExecContext(ctx, `UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?`, step, userID, step)
-		return err
+		// Claim the step atomically: a parallel request with the same code
+		// finds it already used.
+		res, err := s.db.ExecContext(ctx, `UPDATE users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?`, step, userID, step)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n != 1 {
+			return ErrBadCredentials
+		}
+		return nil
 	}
 	// Backup code: compare against each stored hash; remove the one used.
 	var raw string
@@ -359,8 +367,15 @@ func (s *Store) VerifySecondFactor(ctx context.Context, userID int64, code strin
 		if bcrypt.CompareHashAndPassword([]byte(h), []byte(normalized)) == nil {
 			rest := append(append([]string{}, hashes[:i]...), hashes[i+1:]...)
 			b, _ := json.Marshal(rest)
-			_, err := s.db.ExecContext(ctx, `UPDATE users SET backup_codes = ? WHERE id = ?`, string(b), userID)
-			return err
+			// Only succeeds if nobody used a code since we read the list.
+			res, err := s.db.ExecContext(ctx, `UPDATE users SET backup_codes = ? WHERE id = ? AND backup_codes = ?`, string(b), userID, raw)
+			if err != nil {
+				return err
+			}
+			if n, _ := res.RowsAffected(); n != 1 {
+				return ErrBadCredentials
+			}
+			return nil
 		}
 	}
 	return ErrBadCredentials
@@ -432,18 +447,16 @@ func (s *Store) CreateChallenge(ctx context.Context, userID int64) (string, erro
 // attempt; after 5 attempts the challenge is gone.
 func (s *Store) ChallengeUser(ctx context.Context, token string) (User, error) {
 	h := hashToken(token)
+	// Count the attempt and check the limit in one statement.
 	var id int64
-	var attempts int
-	err := s.db.QueryRowContext(ctx, `SELECT user_id, attempts FROM login_challenges WHERE token_hash = ? AND expires_at > ?`,
-		h, time.Now().UTC()).Scan(&id, &attempts)
-	if errors.Is(err, sql.ErrNoRows) || attempts >= 5 {
+	err := s.db.QueryRowContext(ctx, `UPDATE login_challenges SET attempts = attempts + 1
+		WHERE token_hash = ? AND attempts < 5 AND expires_at > ? RETURNING user_id`,
+		h, time.Now().UTC()).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM login_challenges WHERE token_hash = ?`, h)
 		return User{}, ErrNotFound
 	}
 	if err != nil {
-		return User{}, err
-	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE login_challenges SET attempts = attempts + 1 WHERE token_hash = ?`, h); err != nil {
 		return User{}, err
 	}
 	return s.GetUser(ctx, id)

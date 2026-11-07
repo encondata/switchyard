@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/encondata/caddyproxymanager/internal/ratelimit"
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
 
@@ -74,24 +75,26 @@ func (s *srv) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ipKey := "ip:" + clientIP(r)
-	userKey := "user:" + strings.ToLower(strings.TrimSpace(req.Username))
-	if s.rateLimited(w, ipKey, userKey) {
+	userKey := userLimitKey(req.Username)
+	if !s.attempt(w, ipKey, userKey) {
 		return
 	}
 	u, err := s.store.Authenticate(r.Context(), req.Username, req.Password)
 	if errors.Is(err, store.ErrBadCredentials) {
-		s.ipFailures.Fail(ipKey)
-		s.userFailures.Fail(userKey)
+		// The attempt already counted as a failure.
 		s.log.Warn("sign-in failed", "username", req.Username, "remote", r.RemoteAddr)
 		_ = s.store.AuditEvent(r.Context(), req.Username, "sign_in_failed", "session", 0, map[string]string{"ip": clientIP(r)})
 		writeError(w, http.StatusUnauthorized, "bad_credentials", "Wrong username or password.")
 		return
 	}
 	if err != nil {
+		s.undo(ipKey, userKey)
 		s.internalError(w, err)
 		return
 	}
-	s.userFailures.Reset(userKey)
+	// Right password: this attempt wasn't a failure. The username's count
+	// is only cleared once the whole sign-in (including 2FA) succeeds.
+	s.undo(ipKey, userKey)
 	if u.TOTPEnabled {
 		// Password is right; the second factor comes next.
 		challenge, err := s.store.CreateChallenge(r.Context(), u.ID)
@@ -115,7 +118,7 @@ func (s *srv) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ipKey := "ip:" + clientIP(r)
-	if s.rateLimited(w, ipKey) {
+	if !s.attempt(w, ipKey) {
 		return
 	}
 	u, err := s.store.ChallengeUser(r.Context(), req.Challenge)
@@ -127,9 +130,14 @@ func (s *srv) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	userKey := userLimitKey(u.Username)
+	if !s.attempt(w, userKey) {
+		s.undo(ipKey)
+		return
+	}
 	if err := s.store.VerifySecondFactor(r.Context(), u.ID, req.Code, s.box); err != nil {
 		if errors.Is(err, store.ErrBadCredentials) {
-			s.ipFailures.Fail(ipKey)
+			// Both attempts stay counted as failures.
 			s.log.Warn("2FA code rejected", "username", u.Username, "remote", r.RemoteAddr)
 			writeError(w, http.StatusUnauthorized, "bad_code", "That code isn't right. Try the current code from your app, or a backup code.")
 			return
@@ -137,25 +145,42 @@ func (s *srv) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
+	s.undo(ipKey, userKey)
 	_ = s.store.DeleteChallenge(r.Context(), req.Challenge)
 	s.startSession(w, r, u)
 }
 
-func (s *srv) rateLimited(w http.ResponseWriter, keys ...string) bool {
-	for _, k := range keys {
-		lim := s.userFailures
-		if strings.HasPrefix(k, "ip:") {
-			lim = s.ipFailures
-		}
-		if blocked, wait := lim.Blocked(k); blocked {
+func userLimitKey(username string) string {
+	return "user:" + strings.ToLower(strings.TrimSpace(username))
+}
+
+func (s *srv) limiter(key string) *ratelimit.Failures {
+	if strings.HasPrefix(key, "ip:") {
+		return s.ipFailures
+	}
+	return s.userFailures
+}
+
+// attempt reserves an attempt on every key (atomically per key), or writes
+// a 429 and releases the ones it took.
+func (s *srv) attempt(w http.ResponseWriter, keys ...string) bool {
+	for i, k := range keys {
+		if ok, wait := s.limiter(k).Attempt(k); !ok {
+			s.undo(keys[:i]...)
 			mins := int(wait.Minutes()) + 1
 			w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 			writeError(w, http.StatusTooManyRequests, "rate_limited",
 				fmt.Sprintf("Too many failed sign-ins. Try again in %d minute(s).", mins))
-			return true
+			return false
 		}
 	}
-	return false
+	return true
+}
+
+func (s *srv) undo(keys ...string) {
+	for _, k := range keys {
+		s.limiter(k).Undo(k)
+	}
 }
 
 func (s *srv) startSession(w http.ResponseWriter, r *http.Request, u store.User) {
@@ -174,6 +199,7 @@ func (s *srv) startSession(w http.ResponseWriter, r *http.Request, u store.User)
 		Secure:   s.secureCookies,
 		SameSite: http.SameSiteStrictMode,
 	})
+	s.userFailures.Reset(userLimitKey(u.Username))
 	s.log.Info("signed in", "username", u.Username, "remote", r.RemoteAddr)
 	_ = s.store.AuditEvent(r.Context(), u.Username, "sign_in", "session", u.ID, map[string]string{"ip": clientIP(r)})
 	u.MustEnroll2FA = s.require2FA(r) && !u.TOTPEnabled

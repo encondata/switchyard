@@ -64,6 +64,33 @@ func (f *Failures) Fail(key string) {
 	}
 }
 
+// Attempt atomically checks key and, if it isn't blocked, counts this
+// attempt as a failure in advance, so parallel requests can't all slip
+// through the check. Call Undo (or Reset) when the attempt succeeds.
+func (f *Failures) Attempt(key string) (bool, time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	now := f.now()
+	hits := f.prune(key, now)
+	if len(hits) >= f.Max {
+		return false, f.Window - now.Sub(hits[0])
+	}
+	f.hits[key] = append(hits, now)
+	return true, 0
+}
+
+// Undo removes the most recent attempt recorded for key.
+func (f *Failures) Undo(key string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if h := f.hits[key]; len(h) > 0 {
+		f.hits[key] = h[:len(h)-1]
+		if len(f.hits[key]) == 0 {
+			delete(f.hits, key)
+		}
+	}
+}
+
 // Reset forgets key's failures (after a successful sign-in).
 func (f *Failures) Reset(key string) {
 	f.mu.Lock()
