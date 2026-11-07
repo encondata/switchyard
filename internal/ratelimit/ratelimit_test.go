@@ -1,6 +1,7 @@
 package ratelimit
 
 import (
+	"strconv"
 	"testing"
 	"time"
 )
@@ -72,13 +73,31 @@ func TestOverflowFailsClosed(t *testing.T) {
 	for _, k := range []string{"a", "b", "c"} {
 		f.Attempt(k) // each now locked out (Max 1)
 	}
+	// Untracked keys are still limited, per overflow shard.
 	allowed := 0
-	for i := 0; i < 100; i++ {
-		if ok, _ := f.Attempt("new" + time.Duration(i).String()); ok {
+	for i := 0; i < 50; i++ {
+		if ok, _ := f.Attempt("same-shard"); ok {
 			allowed++
 		}
 	}
 	if allowed != f.Max*overflowFactor {
-		t.Fatalf("untracked keys allowed = %d, want %d (shared overflow limit)", allowed, f.Max*overflowFactor)
+		t.Fatalf("untracked key allowed %d times, want %d", allowed, f.Max*overflowFactor)
+	}
+	// A different key usually lands in another shard and isn't affected.
+	other := ""
+	for i := 0; i < 1000; i++ {
+		k := "k" + strconv.Itoa(i)
+		if overflowKey(k) != overflowKey("same-shard") {
+			other = k
+			break
+		}
+	}
+	if ok, _ := f.Attempt(other); !ok {
+		t.Fatal("one full overflow shard blocked an unrelated key")
+	}
+	// Undo releases the overflow hit for an untracked key.
+	f.Undo(other)
+	if n := len(f.hits[overflowKey(other)]); n != 0 {
+		t.Fatalf("overflow hits after undo = %d", n)
 	}
 }

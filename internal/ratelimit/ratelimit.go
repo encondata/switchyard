@@ -3,6 +3,9 @@
 package ratelimit
 
 import (
+	"hash/fnv"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,9 +20,19 @@ const maxKeyLen = 128
 // evictScan bounds how many entries one eviction looks at.
 const evictScan = 64
 
-// overflowKey collects attempts for keys that can't be tracked because the
-// map is full of locked-out keys. They're limited together (fail closed).
-const overflowKey = "\x00overflow"
+// Keys that can't be tracked because the map is full of locked-out keys
+// are counted in one of overflowShards shared buckets, chosen by hash, so
+// they're still limited (fail closed) without one flood locking out every
+// new key at once.
+const overflowShards = 256
+
+func overflowKey(key string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key))
+	return "\x00overflow:" + strconv.Itoa(int(h.Sum32()%overflowShards))
+}
+
+func isOverflow(k string) bool { return strings.HasPrefix(k, "\x00overflow:") }
 
 // overflowFactor sets the overflow bucket's limit relative to Max.
 const overflowFactor = 10
@@ -84,7 +97,8 @@ func (f *Failures) Fail(key string) {
 	defer f.mu.Unlock()
 	now := f.now()
 	if !f.record(key, f.prune(key, now), now) {
-		f.hits[overflowKey] = append(f.prune(overflowKey, now), now)
+		ok := overflowKey(key)
+		f.hits[ok] = append(f.prune(ok, now), now)
 	}
 }
 
@@ -102,20 +116,25 @@ func (f *Failures) Attempt(key string) (bool, time.Duration) {
 	}
 	if !f.record(key, hits, now) {
 		// No room to track this key: count it in the shared overflow bucket.
-		over := f.prune(overflowKey, now)
+		ok := overflowKey(key)
+		over := f.prune(ok, now)
 		if len(over) >= f.Max*overflowFactor {
 			return false, f.Window - now.Sub(over[0])
 		}
-		f.hits[overflowKey] = append(over, now)
+		f.hits[ok] = append(over, now)
 	}
 	return true, 0
 }
 
-// Undo removes the most recent attempt recorded for key.
+// Undo removes the most recent attempt recorded for key (or for its
+// overflow bucket, if the key wasn't tracked).
 func (f *Failures) Undo(key string) {
 	key = clip(key)
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if _, tracked := f.hits[key]; !tracked {
+		key = overflowKey(key)
+	}
 	if h := f.hits[key]; len(h) > 0 {
 		f.hits[key] = h[:len(h)-1]
 		if len(f.hits[key]) == 0 {
@@ -164,7 +183,7 @@ func (f *Failures) evictOne(now time.Time) bool {
 		if n++; n > evictScan {
 			return false
 		}
-		if k == overflowKey {
+		if isOverflow(k) {
 			continue
 		}
 		live := 0
