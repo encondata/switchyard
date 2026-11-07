@@ -24,6 +24,12 @@ func TestScoreAndBanLength(t *testing.T) {
 			t.Errorf("Score(%s) = %d, want %d", path, got, want)
 		}
 	}
+	if Score(hits.Hit{Path: "/.ENV", Reason: "trap:5"}, s, traps) != 5 {
+		t.Error("tagged trap score should be used as-is (Caddy matched /.ENV)")
+	}
+	if Score(hits.Hit{Path: "/.GIT/config", Reason: "trap"}, s, traps) != 10 {
+		t.Error("legacy trap tag should match case-insensitively")
+	}
 	if Score(hits.Hit{Reason: "catchall"}, s, traps) != 1 {
 		t.Error("catch-all score")
 	}
@@ -71,12 +77,12 @@ func TestAutoBan(t *testing.T) {
 		t.Fatalf("not banned at the threshold (pushes %d)", p.n)
 	}
 	// A trap path is worth 10: one hit bans.
-	sc.HandleHits(ctx, []hits.Hit{hit("198.51.100.9", "/.env", "trap")})
+	sc.HandleHits(ctx, []hits.Hit{hit("198.51.100.9", "/.env", "trap:10")})
 	if b, _ := st.IsBanned(ctx, "198.51.100.9"); !b {
 		t.Fatal("trap hit didn't ban")
 	}
 	// Never-block addresses are never banned.
-	sc.HandleHits(ctx, []hits.Hit{hit("192.168.1.20", "/.env", "trap"), hit("192.168.1.20", "/.git/config", "trap")})
+	sc.HandleHits(ctx, []hits.Hit{hit("192.168.1.20", "/.env", "trap:10"), hit("192.168.1.20", "/.git/config", "trap:10")})
 	if b, _ := st.IsBanned(ctx, "192.168.1.20"); b {
 		t.Fatal("never-block address banned")
 	}
@@ -91,7 +97,7 @@ func TestAutoBan(t *testing.T) {
 	if err := st.RemoveBan(ctx, first.ID, "admin"); err != nil {
 		t.Fatal(err)
 	}
-	sc.HandleHits(ctx, []hits.Hit{hit("198.51.100.9", "/.env", "trap")})
+	sc.HandleHits(ctx, []hits.Hit{hit("198.51.100.9", "/.env", "trap:10")})
 	bans, _ = st.ListBans(ctx, true, 10)
 	for _, b := range bans {
 		if b.CIDR == "198.51.100.9" {
@@ -105,7 +111,7 @@ func TestAutoBan(t *testing.T) {
 	// Disabled honeypot: nothing happens.
 	settings.Enabled = false
 	_, _ = st.SaveHoneypot(ctx, settings, "admin")
-	sc.HandleHits(ctx, []hits.Hit{hit("203.0.113.77", "/.env", "trap")})
+	sc.HandleHits(ctx, []hits.Hit{hit("203.0.113.77", "/.env", "trap:10")})
 	if b, _ := st.IsBanned(ctx, "203.0.113.77"); b {
 		t.Fatal("banned while the honeypot is off")
 	}

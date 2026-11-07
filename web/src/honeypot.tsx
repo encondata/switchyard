@@ -540,7 +540,9 @@ export function HoneypotPage({
                           {h.method} {h.host}
                           {h.path}
                           <div className="hint">
-                            {h.reason === 'trap' ? 'trap path' : 'unknown host'}
+                            {h.reason.startsWith('trap')
+                              ? 'trap path'
+                              : 'unknown host'}
                           </div>
                         </td>
                         <td className="req-cell">{h.user_agent || '—'}</td>

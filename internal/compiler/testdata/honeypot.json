@@ -73,7 +73,7 @@
                           "early": true,
                           "handler": "log_append",
                           "key": "cpm_honeypot",
-                          "value": "trap"
+                          "value": "trap:10"
                         },
                         {
                           "body": "<!doctype html><html><head><title>Sign in</title></head><body style=\"font-family:sans-serif\"><form method=\"post\" action=\"#\" style=\"max-width:280px;margin:10% auto\"><h2>Administrator sign in</h2><p><input name=\"username\" placeholder=\"Username\"></p><p><input name=\"password\" type=\"password\" placeholder=\"Password\"></p><p><button>Sign in</button></p></form></body></html>",
@@ -238,7 +238,7 @@
                           "early": true,
                           "handler": "log_append",
                           "key": "cpm_honeypot",
-                          "value": "trap"
+                          "value": "trap:10"
                         },
                         {
                           "body": "<!doctype html><html><head><title>Sign in</title></head><body style=\"font-family:sans-serif\"><form method=\"post\" action=\"#\" style=\"max-width:280px;margin:10% auto\"><h2>Administrator sign in</h2><p><input name=\"username\" placeholder=\"Username\"></p><p><input name=\"password\" type=\"password\" placeholder=\"Password\"></p><p><button>Sign in</button></p></form></body></html>",

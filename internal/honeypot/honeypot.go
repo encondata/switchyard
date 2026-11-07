@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -45,14 +46,22 @@ func globToRegexp(p string) *regexp.Regexp {
 	return regexp.MustCompile("^" + strings.Join(parts, ".*") + "$")
 }
 
-// Score returns the points for one honeypot hit.
+// Score returns the points for one honeypot hit. Trap hits carry the score
+// of the trap Caddy matched ("trap:<score>").
 func Score(h hits.Hit, settings store.HoneypotSettings, traps []store.TrapPath) int {
 	if h.Reason == "catchall" {
 		return settings.CatchallScore
 	}
+	if v, ok := strings.CutPrefix(h.Reason, "trap:"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			return min(n, 1000)
+		}
+	}
+	// Older log lines tagged just "trap": match the path the way Caddy does
+	// (case-insensitively).
 	best := 0
 	for _, t := range traps {
-		if t.Enabled && t.Score > best && globToRegexp(t.Pattern).MatchString(h.Path) {
+		if t.Enabled && t.Score > best && globToRegexp(strings.ToLower(t.Pattern)).MatchString(strings.ToLower(h.Path)) {
 			best = t.Score
 		}
 	}

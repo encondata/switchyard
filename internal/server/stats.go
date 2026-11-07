@@ -158,7 +158,7 @@ func (s *srv) explain(ctx context.Context, hs []hits.Hit) []hitView {
 			v.ReasonText = "Banned"
 		case h.Reason == "catchall":
 			v.ReasonText = "Honeypot (unknown host)"
-		case h.Reason == "trap":
+		case h.Reason == "trap" || strings.HasPrefix(h.Reason, "trap:"):
 			v.ReasonText = "Honeypot (trap path)"
 		default:
 			v.ReasonText = h.Reason

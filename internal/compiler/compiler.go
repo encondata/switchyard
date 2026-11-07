@@ -318,9 +318,7 @@ func hostRoute(h store.Host, access store.AccessState, s Settings) (obj, error) 
 		return nil, err
 	}
 	if access.Honeypot.Settings.Enabled {
-		if tr := trapRoute(h, access.Honeypot); tr != nil {
-			subroutes = append(subroutes, tr)
-		}
+		subroutes = append(subroutes, trapRoutes(h, access.Honeypot)...)
 	}
 	if len(headerHandlers) > 0 {
 		subroutes = append(subroutes, obj{"handle": headerHandlers})
@@ -545,26 +543,36 @@ func catchallRoute(server, response string) obj {
 	return obj{"@id": "cpm_catchall_" + server, "handle": honeypotHandlers("catchall", response)}
 }
 
-// trapRoute sends known scanner paths on a host to the honeypot.
-func trapRoute(h store.Host, hp store.HoneypotState) obj {
+// trapRoutes send known scanner paths on a host to the honeypot: one
+// route per distinct score, tagged "trap:<score>", so the scorer uses the
+// score of the trap Caddy actually matched (Caddy's path matching is
+// case-insensitive and works on the cleaned path).
+func trapRoutes(h store.Host, hp store.HoneypotState) []any {
 	skip := map[string]bool{}
 	for _, e := range h.TrapExceptions {
 		skip[e] = true
 	}
-	var paths []string
+	byScore := map[int][]string{}
 	for _, t := range hp.Traps {
 		if !skip[t.Pattern] {
-			paths = append(paths, t.Pattern)
+			byScore[t.Score] = append(byScore[t.Score], t.Pattern)
 		}
 	}
-	if len(paths) == 0 {
-		return nil
+	scores := make([]int, 0, len(byScore))
+	for sc := range byScore {
+		scores = append(scores, sc)
 	}
-	return obj{
-		"match":    []any{obj{"path": paths}},
-		"handle":   honeypotHandlers("trap", hp.Settings.Response),
-		"terminal": true,
+	// Highest score first, so a path matching several traps scores the most.
+	sort.Sort(sort.Reverse(sort.IntSlice(scores)))
+	var routes []any
+	for _, sc := range scores {
+		routes = append(routes, obj{
+			"match":    []any{obj{"path": byScore[sc]}},
+			"handle":   honeypotHandlers(fmt.Sprintf("trap:%d", sc), hp.Settings.Response),
+			"terminal": true,
+		})
 	}
+	return routes
 }
 
 func notConfiguredRoute(server string) obj {
