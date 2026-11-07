@@ -457,7 +457,9 @@ func accessRoutes(h store.Host, access store.AccessState, s Settings) ([]any, er
 					set.(obj)["not"] = never
 				}
 			}
-			routes = append(routes, obj{"match": sets, "handle": blockHandlers(p.Response, "deny: "+p.Name)})
+			// The tag is placeholder-expanded by Caddy, so it holds only IDs;
+			// CPM shows the policy name when reading the log.
+			routes = append(routes, obj{"match": sets, "handle": blockHandlers(p.Response, fmt.Sprintf("deny:policy:%d", p.ID))})
 		case store.PolicyAllowOnly:
 			allowIPs = append(allowIPs, ips...)
 			allowCountries = append(allowCountries, countries...)
@@ -481,7 +483,7 @@ func accessRoutes(h store.Host, access store.AccessState, s Settings) ([]any, er
 			sets = append(sets, m)
 		}
 		sets = append(sets, never...)
-		routes = append(routes, obj{"match": []any{obj{"not": sets}}, "handle": blockHandlers(allowResponse, "not allowed")})
+		routes = append(routes, obj{"match": []any{obj{"not": sets}}, "handle": blockHandlers(allowResponse, "not_allowed")})
 	}
 	return routes, nil
 }

@@ -24,7 +24,7 @@
                         {
                           "handler": "log_append",
                           "key": "cpm_blocked",
-                          "value": "deny: No RU"
+                          "value": "deny:policy:2"
                         },
                         {
                           "abort": true,
@@ -47,7 +47,7 @@
                         {
                           "handler": "log_append",
                           "key": "cpm_blocked",
-                          "value": "not allowed"
+                          "value": "not_allowed"
                         },
                         {
                           "body": "Access denied.\n",

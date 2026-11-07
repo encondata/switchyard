@@ -398,6 +398,9 @@ func (s *Store) SavePolicy(ctx context.Context, p AccessPolicy, username string)
 	} else if len(p.Name) > 100 {
 		errs["name"] = "keep the name under 100 characters"
 	}
+	if strings.ContainsAny(p.Name, "{}\\") {
+		errs["name"] = "can't contain { } or \\"
+	}
 	if p.Mode != PolicyAllowOnly && p.Mode != PolicyDeny {
 		errs["mode"] = "choose allow-only or deny"
 	}

@@ -24,7 +24,7 @@
                         {
                           "handler": "log_append",
                           "key": "cpm_blocked",
-                          "value": "deny: Bad range"
+                          "value": "deny:policy:2"
                         },
                         {
                           "abort": true,
@@ -55,7 +55,7 @@
                         {
                           "handler": "log_append",
                           "key": "cpm_blocked",
-                          "value": "not allowed"
+                          "value": "not_allowed"
                         },
                         {
                           "abort": true,

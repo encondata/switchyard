@@ -96,8 +96,12 @@ func TestOverflowFailsClosed(t *testing.T) {
 		t.Fatal("one full overflow shard blocked an unrelated key")
 	}
 	// Undo releases the overflow hit for an untracked key.
+	before := len(f.hits[overflowTotalKey])
 	f.Undo(other)
 	if n := len(f.hits[overflowKey(other)]); n != 0 {
 		t.Fatalf("overflow hits after undo = %d", n)
+	}
+	if n := len(f.hits[overflowTotalKey]); n != before-1 {
+		t.Fatalf("overflow total after undo = %d, want %d", n, before-1)
 	}
 }

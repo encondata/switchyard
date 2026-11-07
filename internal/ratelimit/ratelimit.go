@@ -108,6 +108,7 @@ func (f *Failures) Fail(key string) {
 	if !f.record(key, f.prune(key, now), now) {
 		ok := overflowKey(key)
 		f.hits[ok] = append(f.prune(ok, now), now)
+		f.hits[overflowTotalKey] = append(f.prune(overflowTotalKey, now), now)
 	}
 }
 
@@ -146,14 +147,21 @@ func (f *Failures) Undo(key string) {
 	key = clip(key)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, tracked := f.hits[key]; !tracked {
-		key = overflowKey(key)
-	}
-	if h := f.hits[key]; len(h) > 0 {
-		f.hits[key] = h[:len(h)-1]
-		if len(f.hits[key]) == 0 {
-			delete(f.hits, key)
+	pop := func(k string) {
+		if h := f.hits[k]; len(h) > 0 {
+			f.hits[k] = h[:len(h)-1]
+			if len(f.hits[k]) == 0 {
+				delete(f.hits, k)
+			}
 		}
+	}
+	if _, tracked := f.hits[key]; tracked {
+		pop(key)
+		return
+	}
+	if ok := overflowKey(key); len(f.hits[ok]) > 0 {
+		pop(ok)
+		pop(overflowTotalKey)
 	}
 }
 
