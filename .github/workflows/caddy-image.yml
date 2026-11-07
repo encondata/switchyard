@@ -1,0 +1,76 @@
+name: Caddy image
+
+on:
+  push:
+    branches: [main]
+    paths: ["caddy/**", ".github/workflows/caddy-image.yml"]
+  pull_request:
+    paths: ["caddy/**", ".github/workflows/caddy-image.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/cpm-caddy
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Read pinned Caddy version
+        id: ver
+        run: echo "caddy=$(sed -n 's/^ARG CADDY_VERSION=//p' caddy/Dockerfile)" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build for testing (amd64)
+        uses: docker/build-push-action@v7
+        with:
+          context: caddy
+          load: true
+          tags: cpm-caddy:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Check modules and serve a request
+        run: |
+          docker run --rm cpm-caddy:test cpm-verify-modules
+          docker run -d --name caddy -p 8080:80 cpm-caddy:test
+          for i in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8080/ && break; sleep 0.5; done
+          curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8080/
+          docker rm -f caddy
+
+      - uses: docker/metadata-action@v6
+        id: meta
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.ver.outputs.caddy }}-{{sha}}
+            type=raw,value=${{ steps.ver.outputs.caddy }}
+            type=raw,value=latest
+
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish (amd64 + arm64)
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: caddy
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -1,7 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 
-.PHONY: all ui build run test lint fmt check clean
+.PHONY: all ui build run test lint fmt caddy check clean
 
 all: ui build
 
@@ -30,6 +30,11 @@ lint:
 fmt:
 	golangci-lint fmt
 	cd web && npm run format
+
+## caddy: build the custom Caddy image (cpm-caddy:dev) and verify its modules
+caddy:
+	docker build -t cpm-caddy:dev caddy/
+	docker run --rm cpm-caddy:dev cpm-verify-modules
 
 ## check: everything CI runs
 check: lint test

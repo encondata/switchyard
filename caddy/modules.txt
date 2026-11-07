@@ -1,0 +1,19 @@
+# Caddy plugins built into the CPM Caddy image (spec §3).
+# One Go module per line, pinned as module@version. Lines starting with # are
+# ignored. To add a plugin, uncomment (or add) its line, pin a version, and
+# rebuild; CI checks every listed module shows up in `caddy list-modules`.
+
+# Phase 1: DNS-01 challenge for wildcard/internal certs
+github.com/caddy-dns/cloudflare@v0.2.4
+
+# Phase 2: country matcher (CPM-21)
+# github.com/porech/caddy-maxmind-geolocation@vX.Y.Z
+
+# Phase 2, optional: per-host rate limits (CPM-26)
+# github.com/mholt/caddy-ratelimit@vX.Y.Z
+
+# Phase 3, optional: CrowdSec community block lists (CPM-32)
+# github.com/hslatman/caddy-crowdsec-bouncer@vX.Y.Z
+
+# Later, only if needed: TCP/UDP streams (CPM-33)
+# github.com/mholt/caddy-l4@vX.Y.Z

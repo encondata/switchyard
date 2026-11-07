@@ -17,6 +17,19 @@ Work tracking: Harbor Master project `CPM`.
 | `internal/compiler` | Database state → Caddy JSON config (CPM-5) |
 | `internal/ingest` | Access-log ingester with GeoIP tagging (CPM-22) |
 | `web` | React + TypeScript frontend (Vite); `web/dist` is embedded in the binary |
+| `caddy` | Custom Caddy image: `Dockerfile` (pinned Caddy, xcaddy, base images) and `modules.txt` (pinned plugins) |
+
+## Custom Caddy image
+
+`caddy/Dockerfile` builds Caddy with `xcaddy` from the plugins listed in
+`caddy/modules.txt`. To add a plugin (GeoIP, rate limiting, CrowdSec, l4),
+uncomment its line there and pin a version. The build fails if any listed
+plugin is missing from `caddy list-modules`.
+
+`make caddy` builds `cpm-caddy:dev` locally. On every push to `main` that
+touches `caddy/`, the **Caddy image** workflow tests the image and publishes
+it for amd64 and arm64 as `ghcr.io/encondata/cpm-caddy`, tagged `latest`,
+the Caddy version (e.g. `v2.11.9`), and `<caddy version>-<git sha>`.
 
 ## Requirements
 
