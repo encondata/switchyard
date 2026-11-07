@@ -43,11 +43,25 @@ func (c *Client) Socket() string { return c.socket }
 // config it keeps running the old one and the returned error carries
 // Caddy's message.
 func (c *Client) Load(ctx context.Context, config []byte) error {
+	return c.load(ctx, config, false)
+}
+
+// Reload re-sends a config even if it's unchanged. Caddy then restarts its
+// apps, which makes certificate management try again right away ("retry
+// now" on the certificates page).
+func (c *Client) Reload(ctx context.Context, config []byte) error {
+	return c.load(ctx, config, true)
+}
+
+func (c *Client) load(ctx context.Context, config []byte, force bool) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/load", bytes.NewReader(config))
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if force {
+		req.Header.Set("Cache-Control", "must-revalidate")
+	}
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("caddy admin: %w", err)

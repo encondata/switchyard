@@ -75,7 +75,8 @@ func (s *srv) handleMoveHost(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	h, err := s.store.MoveHost(r.Context(), id, req.FolderID, userFrom(r).Username)
+	u := userFrom(r)
+	h, err := s.store.MoveHost(r.Context(), id, req.FolderID, u.Username, u.Role == "admin")
 	if s.storeError(w, err) {
 		return
 	}

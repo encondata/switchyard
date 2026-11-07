@@ -414,9 +414,21 @@ func (s *Store) GetHost(ctx context.Context, id int64) (Host, error) {
 	return h, err
 }
 
-// SaveHost creates (ID 0) or updates a host, after normalizing and
-// validating it, and records the change in the audit log.
+// SaveHost creates (ID 0) or updates a host as an admin, after normalizing
+// and validating it, and records the change in the audit log.
 func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, error) {
+	return s.SaveHostAs(ctx, h, username, true)
+}
+
+// ErrAdvancedAdminOnly is returned when a non-admin tries to change a host
+// that has an advanced JSON snippet, or to change the snippet itself.
+var ErrAdvancedAdminOnly = ConflictError("This host has advanced JSON, so only admins can change it.")
+
+// SaveHostAs saves a host for a user who may not be an admin. Non-admins
+// can't set or change advanced JSON, and can't change hosts that have it
+// (that would let them reuse an admin's snippet on other domains or
+// upstreams). The check uses the row read inside the write transaction.
+func (s *Store) SaveHostAs(ctx context.Context, h Host, username string, isAdmin bool) (Host, error) {
 	h.Normalize()
 	if err := h.Validate(); err != nil {
 		return Host{}, err
@@ -438,6 +450,17 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 		return Host{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	if !isAdmin {
+		current := ""
+		if h.ID != 0 {
+			if err := tx.QueryRowContext(ctx, `SELECT advanced_json FROM hosts WHERE id = ?`, h.ID).Scan(&current); err != nil {
+				return Host{}, err
+			}
+		}
+		if current != "" || h.AdvancedJSON != "" {
+			return Host{}, ErrAdvancedAdminOnly
+		}
+	}
 	if err := checkRefs(ctx, tx, h.FolderID, h.PolicyIDs); err != nil {
 		return Host{}, err
 	}

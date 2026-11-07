@@ -747,6 +747,11 @@ export function HostEditor({
   return (
     <form className="card" onSubmit={submit}>
       <h1>{id ? 'Edit host' : cloneId ? 'Clone host' : 'Add host'}</h1>
+      {!isAdmin && !!host.advanced_json && (
+        <p className="notice">
+          This host has advanced JSON, so only an admin can change it.
+        </p>
+      )}
       {cloneId && !id && (
         <p className="notice">
           A copy of host #{cloneId}. Enter the new host’s domains.

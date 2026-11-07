@@ -43,6 +43,10 @@ type Settings struct {
 	ACMECA string
 	// ACMEEmail is the contact address for ACME accounts (optional).
 	ACMEEmail string
+	// TLSLogFile, if set, makes Caddy also write its certificate
+	// management logs there as JSON, so CPM can show why a certificate
+	// failed (spec F2).
+	TLSLogFile string
 }
 
 // DNSTokenFile is the file holding a DNS provider's token.
@@ -166,6 +170,16 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 	}
 	if len(policies) > 0 {
 		cfg["apps"].(obj)["tls"] = obj{"automation": obj{"policies": policies}}
+	}
+	if s.TLSLogFile != "" {
+		cfg["logging"] = obj{"logs": obj{
+			// Caddy's own default log (stderr) stays as it is.
+			"cpm_tls": obj{
+				"writer":  obj{"output": "file", "filename": s.TLSLogFile, "roll_size_mb": 5, "roll_keep": 2},
+				"encoder": obj{"format": "json"},
+				"include": []string{"tls.obtain", "tls.renew", "tls.issuance"},
+			},
+		}}
 	}
 
 	var buf bytes.Buffer

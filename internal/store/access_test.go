@@ -98,7 +98,7 @@ func TestFolders(t *testing.T) {
 		t.Fatal("host still enabled")
 	}
 
-	if _, err := s.MoveHost(ctx, h.ID, nil, "admin"); err != nil {
+	if _, err := s.MoveHost(ctx, h.ID, nil, "admin", true); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.DeleteFolder(ctx, web.ID, "admin"); err != nil {

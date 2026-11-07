@@ -58,11 +58,37 @@ func validateHeaders(rules []HeaderRule) string {
 		if strings.ContainsAny(h.Value, "\r\n\x00") {
 			return fmt.Sprintf("the value for %s can't contain line breaks", h.Name)
 		}
+		if msg := checkPlaceholders(h.Value); msg != "" {
+			return fmt.Sprintf("%s: %s", h.Name, msg)
+		}
 		if len(h.Value) > 4096 {
 			return fmt.Sprintf("the value for %s is too long", h.Name)
 		}
 		if h.Op != "delete" && h.Value == "" {
 			return fmt.Sprintf("enter a value for %s (or choose delete)", h.Name)
+		}
+	}
+	return ""
+}
+
+// checkPlaceholders allows only request/response placeholders ({http.…})
+// in a header value. Others, such as {file.…} or {env.…}, could expose
+// secrets (DNS tokens, environment) to visitors or upstreams.
+func checkPlaceholders(v string) string {
+	for i := 0; i < len(v); i++ {
+		switch v[i] {
+		case '\\':
+			i++ // escaped character, e.g. \{
+		case '{':
+			end := strings.IndexByte(v[i:], '}')
+			if end < 0 {
+				return "unclosed {"
+			}
+			name := v[i+1 : i+end]
+			if !strings.HasPrefix(name, "http.") || strings.ContainsAny(name, "{\\") {
+				return fmt.Sprintf("only {http.…} placeholders are allowed, not {%s}", name)
+			}
+			i += end
 		}
 	}
 	return ""

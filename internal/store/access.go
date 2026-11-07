@@ -326,13 +326,13 @@ func (s *Store) SetFolderEnabled(ctx context.Context, id int64, enabled bool, us
 }
 
 // MoveHost puts a host in a folder (nil for Unfiled).
-func (s *Store) MoveHost(ctx context.Context, hostID int64, folderID *int64, username string) (Host, error) {
+func (s *Store) MoveHost(ctx context.Context, hostID int64, folderID *int64, username string, isAdmin bool) (Host, error) {
 	h, err := s.GetHost(ctx, hostID)
 	if err != nil {
 		return Host{}, err
 	}
 	h.FolderID = folderID
-	return s.SaveHost(ctx, h, username)
+	return s.SaveHostAs(ctx, h, username, isAdmin)
 }
 
 // --- policies ---

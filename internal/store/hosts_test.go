@@ -164,3 +164,38 @@ func TestHeadersAndAdvanced(t *testing.T) {
 		}
 	}
 }
+
+func TestAdvancedJSONAdminOnly(t *testing.T) {
+	ctx := context.Background()
+	s := openTest(t)
+	plain, err := s.SaveHostAs(ctx, proxyHost("plain.localhost"), "editor", false)
+	if err != nil {
+		t.Fatalf("editor saving a plain host: %v", err)
+	}
+	adv := proxyHost("adv.localhost")
+	adv.AdvancedJSON = `[{"handle":[{"handler":"static_response"}]}]`
+	if _, err := s.SaveHostAs(ctx, adv, "editor", false); !errors.Is(err, ErrAdvancedAdminOnly) {
+		t.Fatalf("editor adding advanced JSON err = %v", err)
+	}
+	adv, err = s.SaveHost(ctx, adv, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	adv.Domains = []string{"other.localhost"}
+	if _, err := s.SaveHostAs(ctx, adv, "editor", false); !errors.Is(err, ErrAdvancedAdminOnly) {
+		t.Fatalf("editor changing an advanced host err = %v", err)
+	}
+	if _, err := s.MoveHost(ctx, adv.ID, nil, "editor", false); !errors.Is(err, ErrAdvancedAdminOnly) {
+		t.Fatalf("editor moving an advanced host err = %v", err)
+	}
+	plain.Notes = "edited"
+	if _, err := s.SaveHostAs(ctx, plain, "editor", false); err != nil {
+		t.Fatalf("editor editing a plain host: %v", err)
+	}
+	ok := proxyHost("ok.localhost")
+	ok.ResponseHeaders = []HeaderRule{{Name: "X-Host", Value: "{http.request.host} \\{literal}"}}
+	ok.Normalize()
+	if err := ok.Validate(); err != nil {
+		t.Fatalf("http placeholder and escaped brace rejected: %v", err)
+	}
+}
