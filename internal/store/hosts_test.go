@@ -79,6 +79,12 @@ func TestValidate(t *testing.T) {
 		"bad redirect":     {Host{Type: HostRedirect, Domains: []string{"a.com"}, RedirectTo: "example.com"}, "redirect_to"},
 		"bad code":         {Host{Type: HostRedirect, Domains: []string{"a.com"}, RedirectTo: "https://b.com", RedirectCode: 200}, "redirect_code"},
 		"bad type":         {Host{Type: "stream", Domains: []string{"a.com"}}, "type"},
+		"placeholder redirect": {Host{Type: HostRedirect, Domains: []string{"a.com"},
+			RedirectTo: "https://b.com/{http.request.header.Cookie}"}, "redirect_to"},
+		"mixed schemes": {Host{Type: HostProxy, Domains: []string{"a.com"},
+			Upstreams: []Upstream{{Scheme: "http", Host: "a"}, {Scheme: "https", Host: "b"}}}, "upstreams"},
+		"mixed verify": {Host{Type: HostProxy, Domains: []string{"a.com"}, Upstreams: []Upstream{
+			{Scheme: "https", Host: "a", SkipTLSVerify: true}, {Scheme: "https", Host: "b"}}}, "upstreams"},
 	}
 	for name, c := range cases {
 		h := c.host

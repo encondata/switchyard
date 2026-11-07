@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"path"
 	"strings"
 	"time"
@@ -87,7 +88,37 @@ func New(opts Options) http.Handler {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")
 	})
 	mux.Handle("/", spaHandler(opts.UI))
-	return securityHeaders(mux)
+	return securityHeaders(sameOrigin(mux))
+}
+
+// sameOrigin rejects state-changing API requests that a browser marks as
+// coming from another site. It backs up the SameSite=Strict session cookie
+// for endpoints with no JSON body (apply, rollback, delete, logout).
+// Non-browser clients send neither header and aren't a CSRF risk.
+func sameOrigin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if site := r.Header.Get("Sec-Fetch-Site"); site != "" && site != "same-origin" && site != "none" {
+			writeError(w, http.StatusForbidden, "cross_site", "Cross-site requests are not allowed.")
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			u, err := url.Parse(origin)
+			if err != nil || u.Host != r.Host {
+				writeError(w, http.StatusForbidden, "cross_site", "Cross-site requests are not allowed.")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // handleStatus reports whether CPM can reach Caddy's admin API.

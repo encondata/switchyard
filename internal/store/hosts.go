@@ -106,6 +106,9 @@ func (h *Host) Normalize() {
 		if u.Scheme == "" {
 			u.Scheme = "http"
 		}
+		if u.Scheme != "https" {
+			u.SkipTLSVerify = false // meaningless without TLS
+		}
 		u.Host = strings.TrimSpace(u.Host)
 		if u.Port == 0 {
 			if u.Scheme == "https" {
@@ -170,13 +173,27 @@ func (h *Host) Validate() error {
 				errs["upstreams"] = "port must be between 1 and 65535"
 			}
 		}
+		// Caddy uses one transport for all of a host's upstreams, so TLS and
+		// certificate checking can't differ between them.
+		for _, u := range h.Upstreams[min(1, len(h.Upstreams)):] {
+			first := h.Upstreams[0]
+			if u.Scheme != first.Scheme {
+				errs["upstreams"] = "all upstreams of a host must use the same scheme (all http or all https)"
+			} else if u.SkipTLSVerify != first.SkipTLSVerify {
+				errs["upstreams"] = "skip TLS verify must be the same for all upstreams of a host"
+			}
+		}
 		if h.LoadBalancing != "round_robin" && h.LoadBalancing != "first" {
 			errs["load_balancing"] = "must be round_robin or first"
 		}
 	case HostRedirect:
 		u, err := url.Parse(h.RedirectTo)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		switch {
+		case err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "":
 			errs["redirect_to"] = "enter a full URL, like https://example.com"
+		case strings.ContainsAny(h.RedirectTo, "{}"):
+			// Caddy would expand {…} as a placeholder in the Location header.
+			errs["redirect_to"] = "can't contain { or }; percent-encode them as %7B and %7D"
 		}
 		switch h.RedirectCode {
 		case 301, 302, 307, 308:

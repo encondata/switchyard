@@ -35,7 +35,7 @@ var cases = map[string][]store.Host{
 		ID: 2, Type: store.HostProxy, Enabled: true, Domains: []string{"nas.lan.example.com"},
 		Upstreams: []store.Upstream{
 			{Scheme: "https", Host: "nas", Port: 5001, SkipTLSVerify: true},
-			{Scheme: "https", Host: "nas-backup", Port: 5001},
+			{Scheme: "https", Host: "nas-backup", Port: 5001, SkipTLSVerify: true},
 		},
 		LoadBalancing: "first", TLSMode: store.TLSInternal,
 	})},

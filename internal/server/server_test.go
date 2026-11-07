@@ -77,3 +77,38 @@ func TestNoUI(t *testing.T) {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
 }
+
+func TestCrossSiteWritesRejected(t *testing.T) {
+	h := New(Options{UI: testUI()})
+	cases := []struct {
+		name    string
+		headers map[string]string
+		want    int
+	}{
+		{"other origin", map[string]string{"Origin": "https://evil.example"}, http.StatusForbidden},
+		{"cross-site fetch", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
+		{"same-site subdomain", map[string]string{"Sec-Fetch-Site": "same-site"}, http.StatusForbidden},
+		{"same origin", map[string]string{"Origin": "http://example.com", "Sec-Fetch-Site": "same-origin"}, http.StatusNotFound},
+		{"non-browser client", nil, http.StatusNotFound},
+	}
+	for _, c := range cases {
+		req := httptest.NewRequest(http.MethodPost, "http://example.com/api/config/apply", nil)
+		for k, v := range c.headers {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		// 404 means the request got past the check (no store wired up here).
+		if rec.Code != c.want {
+			t.Errorf("%s: status = %d, want %d", c.name, rec.Code, c.want)
+		}
+	}
+	// Reads are never blocked.
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/health", nil)
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("cross-site GET health = %d, want 200", rec.Code)
+	}
+}
