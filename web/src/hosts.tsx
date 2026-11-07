@@ -4,11 +4,13 @@ import {
   ApiError,
   effectivePolicies,
   folderAndBelow,
+  folderDNSProvider,
   folderTree,
   message,
   newHost,
   type AccessPolicy,
   type CertStatus,
+  type DNSProvider,
   type Folder,
   type Host,
   type HostView,
@@ -16,7 +18,12 @@ import {
 } from './api'
 
 const typeLabel = { proxy: 'Proxy', redirect: 'Redirect', '404': '404' }
-const tlsLabel = { auto: 'Automatic', internal: 'Internal CA', off: 'Off' }
+const tlsLabel = {
+  auto: 'Automatic',
+  dns: 'DNS challenge',
+  internal: 'Internal CA',
+  off: 'Off',
+}
 
 function CertBadge({ c }: { c: CertStatus }) {
   if (c.state === 'not_needed') return null
@@ -83,8 +90,19 @@ function FolderForm({
     folder ? folder.parent_id : parentId,
   )
   const [policyIds, setPolicyIds] = useState<number[]>(folder?.policy_ids ?? [])
+  const [dnsProvider, setDnsProvider] = useState<number | null>(
+    folder?.dns_provider_id ?? null,
+  )
+  const [providers, setProviders] = useState<DNSProvider[]>([])
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    api
+      .dnsProviders()
+      .then((r) => setProviders(r.providers))
+      .catch(() => setProviders([]))
+  }, [])
 
   // A folder can't move inside itself or its own subfolders.
   const blocked = folder
@@ -101,6 +119,7 @@ function FolderForm({
         name,
         parent_id: parent,
         policy_ids: policyIds,
+        dns_provider_id: dnsProvider,
       })
       onDone(true)
     } catch (err) {
@@ -171,6 +190,29 @@ function FolderForm({
           Every host in this folder and its subfolders gets these policies.
         </p>
       </fieldset>
+      <label>
+        Default DNS provider
+        <select
+          value={dnsProvider ?? ''}
+          onChange={(e) =>
+            setDnsProvider(e.target.value ? Number(e.target.value) : null)
+          }
+        >
+          <option value="">(none — inherit from the folder above)</option>
+          {providers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        <span className="hint">
+          Hosts inside that use the DNS challenge without choosing a provider
+          use this one.
+        </span>
+        {fields.dns_provider_id && (
+          <span className="field-error">{fields.dns_provider_id}</span>
+        )}
+      </label>
       {error && (
         <p className="error" role="alert">
           {error}
@@ -602,15 +644,17 @@ export function HostEditor({
   const [domains, setDomains] = useState('')
   const [folders, setFolders] = useState<Folder[]>([])
   const [policies, setPolicies] = useState<AccessPolicy[]>([])
+  const [providers, setProviders] = useState<DNSProvider[]>([])
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    Promise.all([api.folders(), api.policies()])
-      .then(([f, p]) => {
+    Promise.all([api.folders(), api.policies(), api.dnsProviders()])
+      .then(([f, p, d]) => {
         setFolders(f)
         setPolicies(p)
+        setProviders(d.providers)
       })
       .catch((err: unknown) => setError(message(err)))
     if (!id) return
@@ -870,12 +914,52 @@ export function HostEditor({
             <option value="auto">
               Automatic (Let’s Encrypt) — the domain must point at this server
             </option>
+            <option value="dns">
+              DNS challenge (Cloudflare) — for wildcards and internal names
+            </option>
             <option value="internal">
               Internal CA — for LAN-only names; browsers will warn
             </option>
             <option value="off">Off — plain HTTP on port 80 only</option>
           </select>
         </label>
+        {host.tls_mode === 'dns' && (
+          <label>
+            DNS provider
+            <select
+              value={host.dns_provider_id ?? ''}
+              onChange={(e) =>
+                set({
+                  dns_provider_id: e.target.value
+                    ? Number(e.target.value)
+                    : null,
+                })
+              }
+            >
+              <option value="">
+                {(() => {
+                  const id = folderDNSProvider(host.folder_id, folders)
+                  const p = providers.find((x) => x.id === id)
+                  return p
+                    ? `Folder default (${p.name})`
+                    : 'Folder default (none set — choose one)'
+                })()}
+              </option>
+              {providers.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <FieldError msg={fields.dns_provider_id} />
+            {providers.length === 0 && (
+              <span className="hint">
+                No DNS providers yet. Add your Cloudflare token on the{' '}
+                <a href="#/dns">DNS</a> page.
+              </span>
+            )}
+          </label>
+        )}
         {tls && (
           <div className="actions">
             <label className="inline">

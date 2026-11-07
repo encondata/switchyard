@@ -11,7 +11,7 @@ export type Status = {
 }
 
 export type HostType = 'proxy' | 'redirect' | '404'
-export type TLSMode = 'auto' | 'internal' | 'off'
+export type TLSMode = 'auto' | 'dns' | 'internal' | 'off'
 
 export type Upstream = {
   scheme: 'http' | 'https'
@@ -37,6 +37,7 @@ export type Host = {
   notes: string
   folder_id: number | null
   policy_ids: number[]
+  dns_provider_id: number | null
   created_at?: string
   updated_at?: string
 }
@@ -61,6 +62,41 @@ export type Folder = {
   sort: number
   policy_ids: number[]
   host_count: number
+  dns_provider_id: number | null
+}
+
+export type DNSProvider = {
+  id: number
+  name: string
+  type: 'cloudflare'
+  token_set: boolean
+  host_count: number
+  folder_count: number
+  created_at: string
+}
+
+export type TokenCheck = {
+  active: boolean
+  status: string
+  zones: string[]
+  zones_error?: string
+}
+
+/** The nearest folder default DNS provider (mirrors the server). */
+export function folderDNSProvider(
+  folderId: number | null,
+  folders: Folder[],
+): number | null {
+  const byId = new Map(folders.map((f) => [f.id, f]))
+  const seen = new Set<number>()
+  for (let id = folderId; id != null && !seen.has(id);) {
+    seen.add(id)
+    const f = byId.get(id)
+    if (!f) break
+    if (f.dns_provider_id != null) return f.dns_provider_id
+    id = f.parent_id
+  }
+  return null
 }
 
 export type AccessPolicy = {
@@ -252,7 +288,12 @@ export const api = {
     request<ConfigVersion>('POST', `/api/config/versions/${n}/rollback`),
 
   folders: () => request<Folder[]>('GET', '/api/folders'),
-  saveFolder: (f: Pick<Folder, 'id' | 'name' | 'parent_id' | 'policy_ids'>) =>
+  saveFolder: (
+    f: Pick<
+      Folder,
+      'id' | 'name' | 'parent_id' | 'policy_ids' | 'dns_provider_id'
+    >,
+  ) =>
     f.id
       ? request<Folder>('PUT', `/api/folders/${f.id}`, f)
       : request<Folder>('POST', '/api/folders', f),
@@ -282,6 +323,28 @@ export const api = {
   deleteNeverBan: (cidr: string) =>
     request<void>('DELETE', `/api/never-ban?cidr=${encodeURIComponent(cidr)}`),
   whoami: () => request<{ ip: string }>('GET', '/api/whoami'),
+
+  dnsProviders: () =>
+    request<{ providers: DNSProvider[]; secrets_ready: boolean }>(
+      'GET',
+      '/api/dns-providers',
+    ),
+  saveDNSProvider: (id: number, name: string, api_token: string) =>
+    id
+      ? request<DNSProvider>('PUT', `/api/dns-providers/${id}`, {
+          name,
+          type: 'cloudflare',
+          api_token,
+        })
+      : request<DNSProvider>('POST', '/api/dns-providers', {
+          name,
+          type: 'cloudflare',
+          api_token,
+        }),
+  deleteDNSProvider: (id: number) =>
+    request<void>('DELETE', `/api/dns-providers/${id}`),
+  verifyDNSProvider: (id: number) =>
+    request<TokenCheck>('POST', `/api/dns-providers/${id}/verify`),
 }
 
 export function message(err: unknown): string {
@@ -306,5 +369,6 @@ export function newHost(): Host {
     notes: '',
     folder_id: null,
     policy_ids: [],
+    dns_provider_id: null,
   }
 }

@@ -15,6 +15,7 @@ import (
 
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
+	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
 
@@ -35,6 +36,8 @@ type Options struct {
 	Apply *apply.Service
 	// CaddyDataDir is Caddy's data folder (mounted read-only), for cert status.
 	CaddyDataDir string
+	// Box seals DNS provider tokens. Nil when CPM_SECRET_KEY isn't set.
+	Box *secrets.Box
 }
 
 type srv struct {
@@ -45,6 +48,7 @@ type srv struct {
 	secureCookies bool
 	apply         *apply.Service
 	caddyDataDir  string
+	box           *secrets.Box
 }
 
 // New returns the root HTTP handler.
@@ -60,6 +64,7 @@ func New(opts Options) http.Handler {
 		secureCookies: opts.SecureCookies,
 		apply:         opts.Apply,
 		caddyDataDir:  opts.CaddyDataDir,
+		box:           opts.Box,
 	}
 
 	mux := http.NewServeMux()
@@ -99,6 +104,11 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("POST /api/never-ban", s.requireEditor(s.handleAddNeverBan))
 		mux.HandleFunc("DELETE /api/never-ban", s.requireEditor(s.handleDeleteNeverBan))
 		mux.HandleFunc("GET /api/whoami", s.requireUser(false, s.handleWhoAmI))
+		mux.HandleFunc("GET /api/dns-providers", s.requireUser(false, s.handleListDNSProviders))
+		mux.HandleFunc("POST /api/dns-providers", s.requireAdmin(s.handleSaveDNSProvider))
+		mux.HandleFunc("PUT /api/dns-providers/{id}", s.requireAdmin(s.handleSaveDNSProvider))
+		mux.HandleFunc("DELETE /api/dns-providers/{id}", s.requireAdmin(s.handleDeleteDNSProvider))
+		mux.HandleFunc("POST /api/dns-providers/{id}/verify", s.requireEditor(s.handleVerifyDNSProvider))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")

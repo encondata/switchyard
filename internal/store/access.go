@@ -27,6 +27,9 @@ type Folder struct {
 	Sort      int     `json:"sort"`
 	PolicyIDs []int64 `json:"policy_ids"`
 	HostCount int     `json:"host_count"`
+	// DNSProviderID is the default DNS provider for hosts inside (and in
+	// subfolders) that use the DNS challenge without picking one.
+	DNSProviderID *int64 `json:"dns_provider_id"`
 }
 
 // Access policy modes and responses (spec F4).
@@ -97,7 +100,7 @@ func ParseRule(raw string) (string, error) {
 // ListFolders returns every folder with its policies and direct host count.
 func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT f.id, f.name, f.parent_id, f.sort,
+		SELECT f.id, f.name, f.parent_id, f.sort, f.dns_provider_id,
 			(SELECT COUNT(*) FROM hosts h WHERE h.folder_id = f.id)
 		FROM folders f ORDER BY f.sort, f.name COLLATE NOCASE`)
 	if err != nil {
@@ -107,13 +110,16 @@ func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 	byID := map[int64]int{}
 	for rows.Next() {
 		var f Folder
-		var parent sql.NullInt64
-		if err := rows.Scan(&f.ID, &f.Name, &parent, &f.Sort, &f.HostCount); err != nil {
+		var parent, dnsProvider sql.NullInt64
+		if err := rows.Scan(&f.ID, &f.Name, &parent, &f.Sort, &dnsProvider, &f.HostCount); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
 		if parent.Valid {
 			f.ParentID = &parent.Int64
+		}
+		if dnsProvider.Valid {
+			f.DNSProviderID = &dnsProvider.Int64
 		}
 		f.PolicyIDs = []int64{}
 		byID[f.ID] = len(out)
@@ -161,6 +167,9 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 	if f.ParentID != nil && *f.ParentID <= 0 {
 		f.ParentID = nil
 	}
+	if f.DNSProviderID != nil && *f.DNSProviderID <= 0 {
+		f.DNSProviderID = nil
+	}
 	errs := ValidationError{}
 	if f.Name == "" {
 		errs["name"] = "enter a name"
@@ -196,8 +205,18 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 	if err := checkRefs(ctx, tx, nil, f.PolicyIDs); err != nil {
 		return Folder{}, err
 	}
+	if f.DNSProviderID != nil {
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM dns_providers WHERE id = ?`, *f.DNSProviderID).Scan(&n); err != nil {
+			return Folder{}, err
+		}
+		if n == 0 {
+			return Folder{}, ValidationError{"dns_provider_id": "that DNS provider doesn't exist"}
+		}
+	}
 	if f.ID == 0 {
-		res, err := tx.ExecContext(ctx, `INSERT INTO folders (name, parent_id, sort) VALUES (?, ?, ?)`, f.Name, f.ParentID, f.Sort)
+		res, err := tx.ExecContext(ctx, `INSERT INTO folders (name, parent_id, sort, dns_provider_id) VALUES (?, ?, ?, ?)`,
+			f.Name, f.ParentID, f.Sort, f.DNSProviderID)
 		if err != nil {
 			return Folder{}, folderNameError(err)
 		}
@@ -205,8 +224,8 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 			return Folder{}, err
 		}
 	} else if _, err := tx.ExecContext(ctx,
-		`UPDATE folders SET name = ?, parent_id = ?, sort = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
-		f.Name, f.ParentID, f.Sort, f.ID); err != nil {
+		`UPDATE folders SET name = ?, parent_id = ?, sort = ?, dns_provider_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		f.Name, f.ParentID, f.Sort, f.DNSProviderID, f.ID); err != nil {
 		return Folder{}, folderNameError(err)
 	}
 	if err := setLinks(ctx, tx, "folder_policies", "folder_id", f.ID, f.PolicyIDs); err != nil {
@@ -606,6 +625,69 @@ func (st AccessState) EffectivePolicies(h Host) []InheritedPolicy {
 		fid = f.ParentID
 	}
 	return out
+}
+
+// EffectiveDNSProvider returns the DNS provider a host uses for the DNS
+// challenge: its own, else the nearest folder's default. ok is false if
+// there is none.
+func (st AccessState) EffectiveDNSProvider(h Host) (id int64, ok bool) {
+	if h.DNSProviderID != nil {
+		return *h.DNSProviderID, true
+	}
+	return st.folderDNSProvider(h.FolderID)
+}
+
+func (st AccessState) folderDNSProvider(folderID *int64) (int64, bool) {
+	visited := map[int64]bool{}
+	for fid := folderID; fid != nil && !visited[*fid]; {
+		visited[*fid] = true
+		f, ok := st.Folders[*fid]
+		if !ok {
+			break
+		}
+		if f.DNSProviderID != nil {
+			return *f.DNSProviderID, true
+		}
+		fid = f.ParentID
+	}
+	return 0, false
+}
+
+// checkDNSProvider makes sure a DNS-challenge host has a provider, either
+// its own or from its folders.
+func checkDNSProvider(ctx context.Context, tx *sql.Tx, h Host) error {
+	if h.TLSMode != TLSDNS {
+		return nil
+	}
+	if h.DNSProviderID != nil {
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM dns_providers WHERE id = ?`, *h.DNSProviderID).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			return ValidationError{"dns_provider_id": "that DNS provider doesn't exist"}
+		}
+		return nil
+	}
+	// Walk up the folders for a default.
+	seen := map[int64]bool{}
+	for fid := h.FolderID; fid != nil && !seen[*fid]; {
+		seen[*fid] = true
+		var parent, provider sql.NullInt64
+		err := tx.QueryRowContext(ctx, `SELECT parent_id, dns_provider_id FROM folders WHERE id = ?`, *fid).Scan(&parent, &provider)
+		if err != nil {
+			break
+		}
+		if provider.Valid {
+			return nil
+		}
+		if !parent.Valid {
+			break
+		}
+		p := parent.Int64
+		fid = &p
+	}
+	return ValidationError{"dns_provider_id": "choose a DNS provider (or set a default on the host's folder)"}
 }
 
 // --- helpers ---

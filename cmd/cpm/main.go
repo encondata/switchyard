@@ -17,6 +17,7 @@ import (
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
 	"github.com/encondata/caddyproxymanager/internal/compiler"
+	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/server"
 	"github.com/encondata/caddyproxymanager/internal/store"
 	"github.com/encondata/caddyproxymanager/web"
@@ -74,11 +75,32 @@ func main() {
 		}
 		adminListen = "unix/" + socket + "|0660"
 	}
+	box, err := secrets.New(os.Getenv("CPM_SECRET_KEY"))
+	if err != nil {
+		logger.Error("CPM_SECRET_KEY", "err", err)
+		os.Exit(1)
+	}
+	if !box.Ready() {
+		logger.Warn("CPM_SECRET_KEY is not set; DNS provider tokens can't be stored")
+	}
+	secretsDir := envOr("CPM_SECRETS_DIR", "/run/cpm-secrets")
 	applier := &apply.Service{
-		Store:      st,
-		Caddy:      caddyAPI,
-		Settings:   compiler.Settings{AdminListen: adminListen},
+		Store: st,
+		Caddy: caddyAPI,
+		Settings: compiler.Settings{
+			AdminListen: adminListen,
+			SecretsDir:  secretsDir,
+			ACMECA:      os.Getenv("CPM_ACME_CA"),
+			ACMEEmail:   os.Getenv("CPM_ACME_EMAIL"),
+		},
 		ConfigFile: os.Getenv("CPM_CADDY_CONFIG_FILE"),
+		Box:        box,
+		SecretsDir: secretsDir,
+	}
+	// Caddy may restart with a config that reads token files; make sure
+	// they exist.
+	if err := applier.SyncSecrets(ctx); err != nil {
+		logger.Warn("writing DNS provider tokens", "err", err)
 	}
 
 	srv := &http.Server{
@@ -86,7 +108,7 @@ func main() {
 		Handler: server.New(server.Options{
 			Version: version, UI: web.Dist(), Logger: logger,
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
-			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"),
+			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"), Box: box,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

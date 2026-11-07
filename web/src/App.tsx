@@ -3,6 +3,7 @@ import { api, ApiError, type Preview, type User } from './api'
 import { ChangePassword, Login } from './auth'
 import { Changes, History, StatusPage } from './config'
 import { AccessPage } from './access'
+import { DNSPage } from './dns'
 import { HostEditor, HostList } from './hosts'
 
 // Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
@@ -99,6 +100,10 @@ function App() {
   else if (route === '/history')
     body = <History canEdit={canEdit} onRolledBack={refreshPending} />
   else if (route === '/status') body = <StatusPage />
+  else if (route === '/dns')
+    body = (
+      <DNSPage isAdmin={user.role === 'admin'} onChanged={refreshPending} />
+    )
   else if (route === '/access')
     body = <AccessPage canEdit={canEdit} onChanged={refreshPending} />
   else body = <HostList canEdit={canEdit} onChanged={refreshPending} />
@@ -106,6 +111,7 @@ function App() {
   const nav = [
     ['/hosts', 'Hosts'],
     ['/access', 'Access'],
+    ['/dns', 'DNS'],
     ['/changes', 'Review & apply'],
     ['/history', 'History'],
     ['/status', 'Status'],

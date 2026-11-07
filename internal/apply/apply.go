@@ -13,12 +13,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/pmezard/go-difflib/difflib"
 
 	"github.com/encondata/caddyproxymanager/internal/compiler"
+	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
 
@@ -36,6 +38,10 @@ type Service struct {
 	// ConfigFile, if set, receives each successfully applied config so Caddy
 	// starts with it after a restart.
 	ConfigFile string
+	// Box decrypts DNS provider tokens; SecretsDir is where they're written
+	// for Caddy (see compiler.Settings.SecretsDir).
+	Box        *secrets.Box
+	SecretsDir string
 
 	mu sync.Mutex
 }
@@ -129,7 +135,47 @@ func (s *Service) Rollback(ctx context.Context, n int64, username string) (store
 	return s.load(ctx, []byte(v.JSON), username, fmt.Sprintf("rollback to version %d", n))
 }
 
+// SyncSecrets writes each DNS provider's token to SecretsDir (mode 0600,
+// readable by Caddy, which runs as the same user) and removes files for
+// providers that no longer exist.
+func (s *Service) SyncSecrets(ctx context.Context) error {
+	if s.SecretsDir == "" {
+		return nil
+	}
+	tokens := map[int64]string{}
+	if s.Box.Ready() {
+		var err error
+		if tokens, err = s.Store.DNSTokens(ctx, s.Box); err != nil {
+			return err
+		}
+	}
+	if err := os.MkdirAll(s.SecretsDir, 0o700); err != nil {
+		return err
+	}
+	keep := map[string]bool{}
+	for id, tok := range tokens {
+		path := compiler.DNSTokenFile(s.SecretsDir, id)
+		keep[filepath.Base(path)] = true
+		if err := writeFile(path, []byte(tok), 0o600); err != nil {
+			return err
+		}
+	}
+	entries, err := os.ReadDir(s.SecretsDir)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "dns-") && strings.HasSuffix(e.Name(), ".token") && !keep[e.Name()] {
+			_ = os.Remove(filepath.Join(s.SecretsDir, e.Name()))
+		}
+	}
+	return nil
+}
+
 func (s *Service) load(ctx context.Context, config []byte, username, note string) (store.ConfigVersion, error) {
+	if err := s.SyncSecrets(ctx); err != nil {
+		return store.ConfigVersion{}, fmt.Errorf("writing DNS provider tokens for Caddy: %w", err)
+	}
 	v := store.ConfigVersion{
 		JSON: string(config), SHA256: hash(config), AppliedBy: username,
 		AppliedAt: time.Now().UTC(), Result: "ok", Note: note,
@@ -187,7 +233,9 @@ func unifiedDiff(from, to, fromName string) string {
 	return d
 }
 
-func writeAtomic(path string, data []byte) error {
+func writeAtomic(path string, data []byte) error { return writeFile(path, data, 0o640) }
+
+func writeFile(path string, data []byte, mode os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".caddy-*.json")
 	if err != nil {
 		return err
@@ -197,7 +245,7 @@ func writeAtomic(path string, data []byte) error {
 		_ = tmp.Close()
 		return err
 	}
-	if err := tmp.Chmod(0o640); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		_ = tmp.Close()
 		return err
 	}

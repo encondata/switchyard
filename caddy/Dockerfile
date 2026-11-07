@@ -31,6 +31,7 @@ COPY bootstrap.json /etc/caddy/bootstrap.json
 # Caddy runs as uid 1000 (see entrypoint.sh); let it bind ports below 1024.
 RUN apk add --no-cache libcap su-exec \
     && setcap cap_net_bind_service=+ep /usr/bin/caddy \
+    && mkdir -p /run/cpm-secrets && chown 1000:0 /run/cpm-secrets && chmod 0700 /run/cpm-secrets \
     && caddy version && cpm-verify-modules
 
 ENTRYPOINT ["cpm-caddy-start"]

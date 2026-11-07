@@ -22,6 +22,7 @@ services:
       - "0.0.0.0:443:443/udp" # HTTP/3
     volumes:
       - caddy-applied:/etc/caddy/cpm:ro
+      - cpm-secrets:/run/cpm-secrets:ro
       - caddy-admin:/run/caddy
       - caddy-data:/data
       - caddy-config:/config
@@ -52,9 +53,17 @@ services:
       CPM_CADDY_ADMIN_SOCKET: /run/caddy/admin.sock
       CPM_CADDY_CONFIG_FILE: /caddy-applied/caddy.json
       CPM_CADDY_DATA_DIR: /caddy-data
+      CPM_SECRETS_DIR: /run/cpm-secrets
+      # Encrypts DNS provider tokens at rest. Set it in .env (see
+      # .env.example); without it, DNS providers can't be added.
+      CPM_SECRET_KEY: ${CPM_SECRET_KEY:-}
+      # Optional: ACME directory (e.g. Let's Encrypt staging) and contact email.
+      CPM_ACME_CA: ${CPM_ACME_CA:-}
+      CPM_ACME_EMAIL: ${CPM_ACME_EMAIL:-}
     volumes:
       - cpm-data:/data
       - caddy-applied:/caddy-applied
+      - cpm-secrets:/run/cpm-secrets
       - caddy-admin:/run/caddy
       - caddy-data:/caddy-data:ro
       - caddy-logs:/var/log/caddy:ro
@@ -67,6 +76,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  # DNS provider tokens as files, written by CPM and read by Caddy through
+  # {file.…} placeholders. Encrypted copies live in CPM's database.
+  cpm-secrets:
   caddy-admin:
   caddy-applied:
   caddy-data:

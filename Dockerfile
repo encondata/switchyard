@@ -20,7 +20,8 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}"
 FROM alpine:3.24@sha256:3f4d6b32e26703c6082839234f43769d5046b3ac7c910033911d1e71d8cd630a
 RUN apk add --no-cache ca-certificates tzdata \
     && adduser -D -H -u 1000 -G root cpm \
-    && mkdir -p /data /caddy-applied && chown cpm:root /data /caddy-applied
+    && mkdir -p /data /caddy-applied /run/cpm-secrets \
+    && chown cpm:root /data /caddy-applied /run/cpm-secrets && chmod 0700 /run/cpm-secrets
 COPY --from=build /out/cpm /usr/local/bin/cpm
 
 # Runs as uid 1000 in group root (gid 0): the group gives it access to

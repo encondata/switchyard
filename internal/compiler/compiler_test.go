@@ -195,3 +195,54 @@ func TestGoldenAccess(t *testing.T) {
 		t.Errorf("access config differs from %s; run with -update if intended.\n%s", path, got)
 	}
 }
+
+func TestGoldenDNS(t *testing.T) {
+	cf := int64(7)
+	lan := int64(20)
+	access := store.AccessState{
+		Folders:  map[int64]store.Folder{lan: {ID: lan, Name: "LAN", DNSProviderID: &cf}},
+		Policies: map[int64]store.AccessPolicy{},
+	}
+	hosts := []store.Host{
+		normalized(store.Host{
+			ID: 1, Type: store.HostProxy, Enabled: true, Domains: []string{"nas.lan.example.com", "*.lan.example.com"},
+			Upstreams: []store.Upstream{{Host: "nas", Port: 5000}}, TLSMode: store.TLSDNS, ForceHTTPS: true,
+			FolderID: &lan,
+		}),
+		normalized(store.Host{
+			ID: 2, Type: store.HostProxy, Enabled: true, Domains: []string{"www.example.com"},
+			Upstreams: []store.Upstream{{Host: "web"}}, TLSMode: store.TLSAuto, ForceHTTPS: true,
+		}),
+	}
+	st := Settings{
+		AdminListen: settings.AdminListen, SecretsDir: "/run/cpm-secrets",
+		ACMECA: "https://acme-staging-v02.api.letsencrypt.org/directory", ACMEEmail: "ops@example.com",
+	}
+	got, err := Compile(st, hosts, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(got, []byte("api_token\": \"A")) {
+		t.Fatal("a literal token leaked into the config")
+	}
+	path := filepath.Join("testdata", "dns.json")
+	if *update {
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("dns config differs from %s; run with -update if intended.\n%s", path, got)
+	}
+
+	// No provider anywhere: compile fails with a clear message.
+	hosts[0].FolderID = nil
+	if _, err := Compile(st, hosts, access); err == nil {
+		t.Fatal("expected an error for a DNS host without a provider")
+	}
+}

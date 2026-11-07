@@ -26,6 +26,18 @@ func (s *srv) requireEditor(next http.HandlerFunc) http.HandlerFunc {
 	})
 }
 
+// requireAdmin wraps requireUser and allows only admins (credentials and
+// user management).
+func (s *srv) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return s.requireUser(false, func(w http.ResponseWriter, r *http.Request) {
+		if userFrom(r).Role != "admin" {
+			writeError(w, http.StatusForbidden, "forbidden", "Only admins can do this.")
+			return
+		}
+		next(w, r)
+	})
+}
+
 func pathID(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue(name), 10, 64)
 	if err != nil || id <= 0 {

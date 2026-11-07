@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
@@ -33,6 +34,20 @@ import (
 type Settings struct {
 	// AdminListen is Caddy's admin listener, e.g. "unix//run/caddy/admin.sock|0660".
 	AdminListen string
+	// SecretsDir is where DNS provider tokens are written as files, as seen
+	// by Caddy. The config refers to them with {file.…} placeholders, so
+	// tokens never appear in the config, its history or diffs.
+	SecretsDir string
+	// ACMECA overrides the ACME directory (e.g. Let's Encrypt staging or a
+	// Pebble test server). Empty means Caddy's defaults.
+	ACMECA string
+	// ACMEEmail is the contact address for ACME accounts (optional).
+	ACMEEmail string
+}
+
+// DNSTokenFile is the file holding a DNS provider's token.
+func DNSTokenFile(dir string, providerID int64) string {
+	return fmt.Sprintf("%s/dns-%d.token", strings.TrimRight(dir, "/"), providerID)
 }
 
 // Server and route IDs that other code (and tests) can rely on.
@@ -61,7 +76,15 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 
 	var httpRoutes, httpsRoutes []any
 	var internalSubjects []string
+	dnsSubjects := map[int64][]string{}
 	for _, h := range enabled {
+		if h.TLSMode == store.TLSDNS {
+			pid, ok := access.EffectiveDNSProvider(h)
+			if !ok {
+				return nil, fmt.Errorf("compiler: host %d (%s) uses the DNS challenge but has no DNS provider", h.ID, strings.Join(h.Domains, ", "))
+			}
+			dnsSubjects[pid] = append(dnsSubjects[pid], h.Domains...)
+		}
 		route, err := hostRoute(h, access)
 		if err != nil {
 			return nil, fmt.Errorf("compiler: host %d: %w", h.ID, err)
@@ -109,17 +132,40 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 			"pki": obj{"certificate_authorities": obj{"local": obj{"install_trust": false}}},
 		},
 	}
-	if len(internalSubjects) > 0 {
-		cfg["apps"].(obj)["tls"] = obj{
-			"automation": obj{
-				"policies": []any{
-					obj{
-						"subjects": internalSubjects,
-						"issuers":  []any{obj{"module": "internal"}},
-					},
-				},
+	var policies []any
+	providerIDs := make([]int64, 0, len(dnsSubjects))
+	for id := range dnsSubjects {
+		providerIDs = append(providerIDs, id)
+	}
+	sort.Slice(providerIDs, func(i, j int) bool { return providerIDs[i] < providerIDs[j] })
+	if len(providerIDs) > 0 && s.SecretsDir == "" {
+		return nil, fmt.Errorf("compiler: DNS challenge hosts need a secrets directory (CPM_SECRETS_DIR)")
+	}
+	for _, id := range providerIDs {
+		iss := acmeIssuer(s)
+		iss["challenges"] = obj{"dns": obj{
+			"provider": obj{
+				"name":      "cloudflare",
+				"api_token": "{file." + DNSTokenFile(s.SecretsDir, id) + "}",
 			},
-		}
+			// Public resolvers see the TXT record even where local DNS is
+			// split-horizon (common for internal names).
+			"resolvers": []string{"1.1.1.1", "1.0.0.1"},
+		}}
+		policies = append(policies, obj{"subjects": dnsSubjects[id], "issuers": []any{iss}})
+	}
+	if len(internalSubjects) > 0 {
+		policies = append(policies, obj{
+			"subjects": internalSubjects,
+			"issuers":  []any{obj{"module": "internal"}},
+		})
+	}
+	if s.ACMECA != "" || s.ACMEEmail != "" {
+		// Catch-all for HTTP-challenge hosts.
+		policies = append(policies, obj{"issuers": []any{acmeIssuer(s)}})
+	}
+	if len(policies) > 0 {
+		cfg["apps"].(obj)["tls"] = obj{"automation": obj{"policies": policies}}
 	}
 
 	var buf bytes.Buffer
@@ -130,6 +176,17 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func acmeIssuer(s Settings) obj {
+	iss := obj{"module": "acme"}
+	if s.ACMECA != "" {
+		iss["ca"] = s.ACMECA
+	}
+	if s.ACMEEmail != "" {
+		iss["email"] = s.ACMEEmail
+	}
+	return iss
 }
 
 func hostRoute(h store.Host, access store.AccessState) (obj, error) {

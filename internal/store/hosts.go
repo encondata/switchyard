@@ -21,11 +21,12 @@ const (
 	Host404      = "404"
 )
 
-// TLS modes. "dns" (Cloudflare DNS challenge) arrives with CPM-15.
+// TLS modes.
 const (
 	TLSAuto     = "auto"     // Let's Encrypt / ZeroSSL via HTTP or TLS-ALPN challenge
 	TLSInternal = "internal" // Caddy's local CA, for LAN-only names
 	TLSOff      = "off"      // plain HTTP on port 80 only
+	TLSDNS      = "dns"      // Let's Encrypt via the DNS-01 challenge (wildcards, internal names)
 )
 
 // Host is a site CPM serves: a reverse proxy, a redirect or a fixed 404.
@@ -48,9 +49,12 @@ type Host struct {
 	FolderID *int64 `json:"folder_id"`
 	// PolicyIDs are access policies attached to the host itself. The host
 	// also gets its folders' policies (see EffectivePolicies).
-	PolicyIDs []int64   `json:"policy_ids"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	PolicyIDs []int64 `json:"policy_ids"`
+	// DNSProviderID picks the DNS provider for TLS "dns"; nil means use the
+	// nearest folder's default.
+	DNSProviderID *int64    `json:"dns_provider_id"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // Upstream is a backend a proxy host forwards to.
@@ -134,6 +138,9 @@ func (h *Host) Normalize() {
 	if h.FolderID != nil && *h.FolderID <= 0 {
 		h.FolderID = nil
 	}
+	if h.TLSMode != TLSDNS || (h.DNSProviderID != nil && *h.DNSProviderID <= 0) {
+		h.DNSProviderID = nil
+	}
 	if h.TLSMode == TLSOff {
 		h.ForceHTTPS = false
 		h.HSTS = false
@@ -149,9 +156,9 @@ func (h *Host) Validate() error {
 		errs["type"] = "must be proxy, redirect or 404"
 	}
 	switch h.TLSMode {
-	case TLSAuto, TLSInternal, TLSOff:
+	case TLSAuto, TLSInternal, TLSOff, TLSDNS:
 	default:
-		errs["tls_mode"] = "must be auto, internal or off"
+		errs["tls_mode"] = "must be auto, dns, internal or off"
 	}
 	if len(h.Domains) == 0 {
 		errs["domains"] = "add at least one domain"
@@ -226,7 +233,7 @@ func checkDomain(d, tlsMode string) string {
 	name := d
 	if strings.HasPrefix(d, "*.") {
 		if tlsMode == TLSAuto {
-			return "wildcard domains need the DNS challenge (coming with Cloudflare support); use TLS internal or off for now"
+			return "wildcard domains need the DNS challenge: set the certificate to “DNS challenge”"
 		}
 		name = d[2:]
 	}
@@ -245,20 +252,28 @@ func checkDomain(d, tlsMode string) string {
 var ErrDomainTaken = errors.New("domain already used by another host")
 
 const hostColumns = `id, type, enabled, upstreams, load_balancing, tls_mode, force_https, hsts,
-	compression, redirect_to, redirect_code, preserve_path, notes, folder_id, created_at, updated_at`
+	compression, redirect_to, redirect_code, preserve_path, notes, folder_id, acme_challenge, dns_provider_id,
+	created_at, updated_at`
 
 func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	var h Host
 	var upstreams string
-	var folder sql.NullInt64
+	var folder, dnsProvider sql.NullInt64
+	var challenge string
 	err := row.Scan(&h.ID, &h.Type, &h.Enabled, &upstreams, &h.LoadBalancing, &h.TLSMode, &h.ForceHTTPS,
 		&h.HSTS, &h.Compression, &h.RedirectTo, &h.RedirectCode, &h.PreservePath, &h.Notes, &folder,
-		&h.CreatedAt, &h.UpdatedAt)
+		&challenge, &dnsProvider, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return h, err
 	}
 	if folder.Valid {
 		h.FolderID = &folder.Int64
+	}
+	if dnsProvider.Valid {
+		h.DNSProviderID = &dnsProvider.Int64
+	}
+	if h.TLSMode == TLSAuto && challenge == "dns" {
+		h.TLSMode = TLSDNS
 	}
 	h.PolicyIDs = []int64{}
 	if err := json.Unmarshal([]byte(upstreams), &h.Upstreams); err != nil {
@@ -382,13 +397,22 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 	if err := checkRefs(ctx, tx, h.FolderID, h.PolicyIDs); err != nil {
 		return Host{}, err
 	}
+	if err := checkDNSProvider(ctx, tx, h); err != nil {
+		return Host{}, err
+	}
 
-	args := []any{h.Type, h.Enabled, string(upstreams), h.LoadBalancing, h.TLSMode, h.ForceHTTPS, h.HSTS,
-		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID}
+	// DNS is stored as tls_mode 'auto' + acme_challenge 'dns' (see 0004).
+	tlsMode, challenge := h.TLSMode, "http"
+	if h.TLSMode == TLSDNS {
+		tlsMode, challenge = TLSAuto, "dns"
+	}
+	args := []any{h.Type, h.Enabled, string(upstreams), h.LoadBalancing, tlsMode, h.ForceHTTPS, h.HSTS,
+		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID, challenge, h.DNSProviderID}
 	if h.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO hosts (type, enabled, upstreams, load_balancing, tls_mode,
-			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes, folder_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
+			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes, folder_id,
+			acme_challenge, dns_provider_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 		if err != nil {
 			return Host{}, err
 		}
@@ -398,7 +422,8 @@ func (s *Store) SaveHost(ctx context.Context, h Host, username string) (Host, er
 	} else {
 		if _, err := tx.ExecContext(ctx, `UPDATE hosts SET type = ?, enabled = ?, upstreams = ?, load_balancing = ?,
 			tls_mode = ?, force_https = ?, hsts = ?, compression = ?, redirect_to = ?, redirect_code = ?,
-			preserve_path = ?, notes = ?, folder_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			preserve_path = ?, notes = ?, folder_id = ?, acme_challenge = ?, dns_provider_id = ?,
+			updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 			append(args, h.ID)...); err != nil {
 			return Host{}, err
 		}
