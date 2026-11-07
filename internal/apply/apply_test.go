@@ -142,3 +142,20 @@ func TestRollback(t *testing.T) {
 		t.Fatalf("after rollback preview = %+v; want pending, no drift", p)
 	}
 }
+
+func TestVersionDiff(t *testing.T) {
+	ctx := context.Background()
+	svc, _, st := setup(t)
+	addHost(t, st, "one.localhost")
+	v1, _ := svc.Apply(ctx, "admin", "")
+	addHost(t, st, "two.localhost")
+	v2, _ := svc.Apply(ctx, "admin", "")
+	diff, prev, err := svc.VersionDiff(ctx, v2.N)
+	if err != nil || prev != v1.N || !strings.Contains(diff, "+") || !strings.Contains(diff, "two.localhost") || strings.Contains(diff, "+          \"one.localhost\"") {
+		t.Fatalf("diff v%d (prev %d, err %v):\n%s", v2.N, prev, err, diff)
+	}
+	first, prev, _ := svc.VersionDiff(ctx, v1.N)
+	if prev != 0 || !strings.Contains(first, "one.localhost") {
+		t.Fatalf("first version diff (prev %d):\n%s", prev, first)
+	}
+}

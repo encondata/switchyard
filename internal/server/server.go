@@ -140,6 +140,7 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("POST /api/config/apply", s.requireEditor(s.handleApply))
 		mux.HandleFunc("GET /api/config/versions", s.requireUser(false, s.handleListVersions))
 		mux.HandleFunc("GET /api/config/versions/{n}", s.requireUser(false, s.handleGetVersion))
+		mux.HandleFunc("GET /api/config/versions/{n}/diff", s.requireUser(false, s.handleVersionDiff))
 		mux.HandleFunc("POST /api/config/versions/{n}/rollback", s.requireEditor(s.handleRollback))
 
 		mux.HandleFunc("GET /api/folders", s.requireUser(false, s.handleListFolders))

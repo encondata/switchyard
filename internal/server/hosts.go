@@ -206,6 +206,18 @@ func (s *srv) handleGetVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
+func (s *srv) handleVersionDiff(w http.ResponseWriter, r *http.Request) {
+	n, ok := pathID(w, r, "n")
+	if !ok {
+		return
+	}
+	diff, prev, err := s.apply.VersionDiff(r.Context(), n)
+	if s.storeError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"diff": diff, "previous": prev})
+}
+
 // storeError writes the response for a store error and reports whether
 // there was one.
 func (s *srv) storeError(w http.ResponseWriter, err error) bool {

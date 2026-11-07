@@ -115,6 +115,24 @@ func (s *Service) Preview(ctx context.Context) (Preview, error) {
 	return p, nil
 }
 
+// VersionDiff is a unified diff from the successful version before n to n.
+func (s *Service) VersionDiff(ctx context.Context, n int64) (string, int64, error) {
+	v, err := s.Store.GetConfigVersion(ctx, n)
+	if err != nil {
+		return "", 0, err
+	}
+	prev, err := s.Store.PreviousAppliedConfig(ctx, n)
+	if errors.Is(err, store.ErrNotFound) {
+		return unifiedDiff("", v.JSON, "(nothing)"), 0, nil
+	}
+	if err != nil {
+		return "", 0, err
+	}
+	a, _ := Normalize([]byte(prev.JSON))
+	b, _ := Normalize([]byte(v.JSON))
+	return unifiedDiff(string(a), string(b), fmt.Sprintf("version %d", prev.N)), prev.N, nil
+}
+
 // SameIgnoringBans compares two configs, ignoring the ban lists, which CPM
 // updates in place between full applies (so they aren't drift).
 func SameIgnoringBans(a, b []byte) bool {

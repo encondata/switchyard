@@ -151,10 +151,18 @@ export function History({
   }
   useEffect(load, [])
 
-  async function view(n: number) {
-    if (open?.n === n) return setOpen(null)
+  const [mode, setMode] = useState<'diff' | 'json'>('diff')
+  const [diff, setDiff] = useState<{ diff: string; previous: number } | null>(
+    null,
+  )
+
+  async function view(n: number, m: 'diff' | 'json') {
+    if (open?.n === n && mode === m) return setOpen(null)
     try {
-      setOpen(await api.version(n))
+      const [v, d] = await Promise.all([api.version(n), api.versionDiff(n)])
+      setOpen(v)
+      setDiff(d)
+      setMode(m)
     } catch (err) {
       setError(message(err))
     }
@@ -226,8 +234,17 @@ export function History({
                   <td>{v.note}</td>
                   <td>
                     <div className="row-actions">
-                      <button className="link" onClick={() => view(v.n)}>
-                        {open?.n === v.n ? 'Hide' : 'View'}
+                      <button
+                        className="link"
+                        onClick={() => view(v.n, 'diff')}
+                      >
+                        Changes
+                      </button>
+                      <button
+                        className="link"
+                        onClick={() => view(v.n, 'json')}
+                      >
+                        Full config
                       </button>
                       {canEdit && v.result === 'ok' && (
                         <button className="link" onClick={() => rollback(v.n)}>
@@ -244,8 +261,27 @@ export function History({
       )}
       {open && (
         <>
-          <h2>Version {open.n}</h2>
-          <pre className="diff">{open.json}</pre>
+          <div className="toolbar">
+            <h2>
+              Version {open.n}
+              {mode === 'diff' &&
+                (diff?.previous
+                  ? ` — changes since version ${diff.previous}`
+                  : ' — the first applied config')}
+            </h2>
+            <button className="link" onClick={() => setOpen(null)}>
+              Close
+            </button>
+          </div>
+          {mode === 'diff' && diff ? (
+            diff.diff ? (
+              <Diff text={diff.diff} />
+            ) : (
+              <p className="hint">Same config as the version before.</p>
+            )
+          ) : (
+            <pre className="diff">{open.json}</pre>
+          )}
         </>
       )}
     </section>

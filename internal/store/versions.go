@@ -87,3 +87,15 @@ func (s *Store) LastAppliedConfig(ctx context.Context) (ConfigVersion, error) {
 	}
 	return v, err
 }
+
+// PreviousAppliedConfig returns the newest successful version before n.
+func (s *Store) PreviousAppliedConfig(ctx context.Context, n int64) (ConfigVersion, error) {
+	var v ConfigVersion
+	err := s.db.QueryRowContext(ctx, `SELECT n, json, sha256, applied_by, applied_at, result, error, note
+		FROM config_versions WHERE result = 'ok' AND n < ? ORDER BY n DESC LIMIT 1`, n).
+		Scan(&v.N, &v.JSON, &v.SHA256, &v.AppliedBy, &v.AppliedAt, &v.Result, &v.Error, &v.Note)
+	if errors.Is(err, sql.ErrNoRows) {
+		return v, ErrNotFound
+	}
+	return v, err
+}

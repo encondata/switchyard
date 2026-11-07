@@ -533,6 +533,11 @@ export const api = {
   apply: (note: string) =>
     request<ConfigVersion>('POST', '/api/config/apply', { note }),
   versions: () => request<ConfigVersion[]>('GET', '/api/config/versions'),
+  versionDiff: (n: number) =>
+    request<{ diff: string; previous: number }>(
+      'GET',
+      `/api/config/versions/${n}/diff`,
+    ),
   version: (n: number) =>
     request<ConfigVersion>('GET', `/api/config/versions/${n}`),
   rollback: (n: number) =>
