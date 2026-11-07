@@ -589,6 +589,7 @@ type AccessState struct {
 	Folders  map[int64]Folder
 	Policies map[int64]AccessPolicy
 	NeverBan []string
+	Honeypot HoneypotState
 }
 
 // LoadAccessState reads folders, policies and the never-block list.
@@ -615,7 +616,8 @@ func (s *Store) LoadAccessState(ctx context.Context) (AccessState, error) {
 	for _, n := range nb {
 		st.NeverBan = append(st.NeverBan, n.CIDR)
 	}
-	return st, nil
+	st.Honeypot, err = s.LoadHoneypotState(ctx)
+	return st, err
 }
 
 // InheritedPolicy is a policy that applies to a host, and where it came from.

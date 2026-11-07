@@ -156,6 +156,10 @@ func (s *srv) explain(ctx context.Context, hs []hits.Hit) []hitView {
 			}
 		case h.Reason == "banned":
 			v.ReasonText = "Banned"
+		case h.Reason == "catchall":
+			v.ReasonText = "Honeypot (unknown host)"
+		case h.Reason == "trap":
+			v.ReasonText = "Honeypot (trap path)"
 		default:
 			v.ReasonText = h.Reason
 		}
@@ -196,8 +200,9 @@ func (s *srv) handleStatsIP(w http.ResponseWriter, r *http.Request) {
 			never = true
 		}
 	}
+	banned, _ := s.store.IsBanned(r.Context(), addr.String())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ip": h.IP, "country": h.Country, "total": h.Total, "blocked": h.Blocked,
-		"hosts": h.Hosts, "recent": s.explain(r.Context(), h.Recent), "never_ban": never,
+		"hosts": h.Hosts, "recent": s.explain(r.Context(), h.Recent), "never_ban": never, "banned": banned,
 	})
 }

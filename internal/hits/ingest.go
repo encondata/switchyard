@@ -49,11 +49,12 @@ type accessEntry struct {
 		URI      string              `json:"uri"`
 		Headers  map[string][]string `json:"headers"`
 	} `json:"request"`
-	Duration float64 `json:"duration"`
-	Size     int64   `json:"size"`
-	Status   int     `json:"status"`
-	Blocked  string  `json:"cpm_blocked"`
-	Honeypot string  `json:"cpm_honeypot"`
+	Duration  float64 `json:"duration"`
+	Size      int64   `json:"size"`
+	Status    int     `json:"status"`
+	UserAgent string  `json:"user_agent"`
+	Blocked   string  `json:"cpm_blocked"`
+	Honeypot  string  `json:"cpm_honeypot"`
 }
 
 // ParseLine turns one access log line into a Hit.
@@ -83,11 +84,12 @@ func ParseLine(line []byte, geo *geoip.DB) (Hit, bool) {
 	if i := strings.IndexByte(h.Path, '?'); i >= 0 {
 		h.Path = h.Path[:i] // query strings can hold tokens; don't keep them
 	}
-	if ua := e.Request.Headers["User-Agent"]; len(ua) > 0 {
-		h.UserAgent = ua[0]
-		if len(h.UserAgent) > 300 {
-			h.UserAgent = h.UserAgent[:300]
-		}
+	h.UserAgent = e.UserAgent
+	if ua := e.Request.Headers["User-Agent"]; h.UserAgent == "" && len(ua) > 0 {
+		h.UserAgent = ua[0] // logs from before the header filter
+	}
+	if len(h.UserAgent) > 300 {
+		h.UserAgent = h.UserAgent[:300]
 	}
 	switch {
 	case e.Honeypot != "":

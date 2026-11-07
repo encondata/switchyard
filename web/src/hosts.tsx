@@ -1151,6 +1151,26 @@ export function HostEditor({
         </fieldset>
       )}
 
+      <details open={host.trap_exceptions.length > 0}>
+        <summary>Honeypot exceptions</summary>
+        <label>
+          Trap paths this host serves normally{' '}
+          <span className="hint">
+            (one per line, exactly as on the Honeypot page)
+          </span>
+          <textarea
+            rows={3}
+            className="mono"
+            placeholder="/wp-login.php"
+            value={host.trap_exceptions.join('\n')}
+            onChange={(e) =>
+              set({ trap_exceptions: e.target.value.split('\n') })
+            }
+          />
+          <FieldError msg={fields.trap_exceptions} />
+        </label>
+      </details>
+
       <details open={!!host.advanced_json}>
         <summary>Advanced: raw Caddy routes</summary>
         <label>

@@ -898,3 +898,12 @@ details summary {
     flex-basis: 100%;
   }
 }
+
+.small-num {
+  width: 5rem;
+}
+
+button.secondary.danger {
+  color: var(--bad);
+  border-color: var(--bad);
+}

@@ -67,6 +67,7 @@ export type Host = {
   health_check_path: string
   health_check_interval: number
   advanced_json: string
+  trap_exceptions: string[]
   created_at?: string
   updated_at?: string
 }
@@ -375,6 +376,44 @@ function scopeQuery(s: StatsScope, extra: Record<string, string> = {}) {
   return p.toString()
 }
 
+export type HoneypotSettings = {
+  enabled: boolean
+  response: 'login' | 'server' | 'empty' | '404'
+  catchall_score: number
+  threshold: number
+  window_hours: number
+  ban_days: number
+  max_ban_days: number
+}
+
+export type TrapPath = {
+  id: number
+  pattern: string
+  score: number
+  enabled: boolean
+}
+
+export type Ban = {
+  id: number
+  cidr: string
+  reason: string
+  source: 'honeypot' | 'manual' | 'crowdsec'
+  created_by: string
+  created_at: string
+  expires_at: string | null
+  removed_at?: string
+  hit_count: number
+  active: boolean
+}
+
+export type HoneypotActivity = {
+  path: TopRow[]
+  ip: TopRow[]
+  ua: TopRow[]
+  host: TopRow[]
+  recent: HitRow[]
+}
+
 export class ApiError extends Error {
   status: number
   code: string
@@ -550,6 +589,35 @@ export const api = {
       'GET',
       `/api/stats/tail?${scopeQuery(s, { after: String(after) })}`,
     ),
+  honeypot: () =>
+    request<{ settings: HoneypotSettings; traps: TrapPath[] }>(
+      'GET',
+      '/api/honeypot',
+    ),
+  saveHoneypot: (h: HoneypotSettings) =>
+    request<HoneypotSettings>('PUT', '/api/honeypot', h),
+  saveTrap: (t: TrapPath) =>
+    t.id
+      ? request<TrapPath>('PUT', `/api/honeypot/traps/${t.id}`, t)
+      : request<TrapPath>('POST', '/api/honeypot/traps', t),
+  deleteTrap: (id: number) =>
+    request<void>('DELETE', `/api/honeypot/traps/${id}`),
+  honeypotActivity: (range: string) =>
+    request<HoneypotActivity>('GET', `/api/honeypot/activity?range=${range}`),
+  bans: (all: boolean) =>
+    request<Ban[]>('GET', `/api/bans${all ? '?all=1' : ''}`),
+  addBan: (cidr: string, reason: string, days: number) =>
+    request<{ ban: Ban; warning: string }>('POST', '/api/bans', {
+      cidr,
+      reason,
+      days,
+    }),
+  removeBan: (id: number) =>
+    request<{ warning: string }>('DELETE', `/api/bans/${id}`),
+  unbanAddress: (cidr: string) =>
+    request<{ lifted: number; warning: string }>('POST', '/api/bans/unban', {
+      cidr,
+    }),
   statsIP: (ip: string) =>
     request<IPDetail>('GET', `/api/stats/ip/${encodeURIComponent(ip)}`),
 
@@ -658,5 +726,6 @@ export function newHost(): Host {
     health_check_path: '',
     health_check_interval: 30,
     advanced_json: '',
+    trap_exceptions: [],
   }
 }

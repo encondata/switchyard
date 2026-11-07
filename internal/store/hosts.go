@@ -64,9 +64,11 @@ type Host struct {
 	HealthCheckInterval int    `json:"health_check_interval"`
 	// AdvancedJSON is a raw array of Caddy routes placed after the access
 	// rules and before the host's own handler. Admins only.
-	AdvancedJSON string    `json:"advanced_json"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	AdvancedJSON string `json:"advanced_json"`
+	// TrapExceptions are honeypot trap paths this host serves normally.
+	TrapExceptions []string  `json:"trap_exceptions"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // Upstream is a backend a proxy host forwards to.
@@ -156,6 +158,16 @@ func (h *Host) Normalize() {
 	h.RequestHeaders = normalizeHeaders(h.RequestHeaders)
 	h.ResponseHeaders = normalizeHeaders(h.ResponseHeaders)
 	h.HealthCheckPath = strings.TrimSpace(h.HealthCheckPath)
+	var exc []string
+	for _, e := range h.TrapExceptions {
+		if e = strings.TrimSpace(e); e != "" {
+			exc = append(exc, e)
+		}
+	}
+	h.TrapExceptions = exc
+	if h.TrapExceptions == nil {
+		h.TrapExceptions = []string{}
+	}
 	if h.HealthCheckInterval <= 0 {
 		h.HealthCheckInterval = 30
 	}
@@ -258,6 +270,9 @@ func (h *Host) Validate() error {
 	} else {
 		h.AdvancedJSON = canon
 	}
+	if len(h.TrapExceptions) > 100 {
+		errs["trap_exceptions"] = "at most 100 exceptions"
+	}
 	if len(h.Notes) > 2000 {
 		errs["notes"] = "keep notes under 2000 characters"
 	}
@@ -294,17 +309,18 @@ var ErrDomainTaken = errors.New("domain already used by another host")
 
 const hostColumns = `id, type, enabled, upstreams, load_balancing, tls_mode, force_https, hsts,
 	compression, redirect_to, redirect_code, preserve_path, notes, folder_id, acme_challenge, dns_provider_id,
-	request_headers, response_headers, health_check_path, health_check_interval, advanced_json, created_at, updated_at`
+	request_headers, response_headers, health_check_path, health_check_interval, advanced_json, trap_exceptions,
+	created_at, updated_at`
 
 func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	var h Host
 	var upstreams string
 	var folder, dnsProvider sql.NullInt64
-	var challenge, reqHeaders, respHeaders string
+	var challenge, reqHeaders, respHeaders, trapExc string
 	err := row.Scan(&h.ID, &h.Type, &h.Enabled, &upstreams, &h.LoadBalancing, &h.TLSMode, &h.ForceHTTPS,
 		&h.HSTS, &h.Compression, &h.RedirectTo, &h.RedirectCode, &h.PreservePath, &h.Notes, &folder,
 		&challenge, &dnsProvider, &reqHeaders, &respHeaders, &h.HealthCheckPath, &h.HealthCheckInterval,
-		&h.AdvancedJSON, &h.CreatedAt, &h.UpdatedAt)
+		&h.AdvancedJSON, &trapExc, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return h, err
 	}
@@ -316,6 +332,9 @@ func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	}
 	if h.TLSMode == TLSAuto && challenge == "dns" {
 		h.TLSMode = TLSDNS
+	}
+	if json.Unmarshal([]byte(trapExc), &h.TrapExceptions) != nil || h.TrapExceptions == nil {
+		h.TrapExceptions = []string{}
 	}
 	h.RequestHeaders = decodeHeaders(reqHeaders)
 	h.ResponseHeaders = decodeHeaders(respHeaders)
@@ -476,13 +495,13 @@ func (s *Store) SaveHostAs(ctx context.Context, h Host, username string, isAdmin
 	args := []any{h.Type, h.Enabled, string(upstreams), h.LoadBalancing, tlsMode, h.ForceHTTPS, h.HSTS,
 		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID, challenge, h.DNSProviderID,
 		encodeHeaders(h.RequestHeaders), encodeHeaders(h.ResponseHeaders), h.HealthCheckPath, h.HealthCheckInterval,
-		h.AdvancedJSON}
+		h.AdvancedJSON, mustJSON(h.TrapExceptions)}
 	if h.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO hosts (type, enabled, upstreams, load_balancing, tls_mode,
 			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes, folder_id,
 			acme_challenge, dns_provider_id, request_headers, response_headers, health_check_path,
-			health_check_interval, advanced_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
+			health_check_interval, advanced_json, trap_exceptions)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 		if err != nil {
 			return Host{}, err
 		}
@@ -494,7 +513,7 @@ func (s *Store) SaveHostAs(ctx context.Context, h Host, username string, isAdmin
 			tls_mode = ?, force_https = ?, hsts = ?, compression = ?, redirect_to = ?, redirect_code = ?,
 			preserve_path = ?, notes = ?, folder_id = ?, acme_challenge = ?, dns_provider_id = ?,
 			request_headers = ?, response_headers = ?, health_check_path = ?, health_check_interval = ?,
-			advanced_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			advanced_json = ?, trap_exceptions = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 			append(args, h.ID)...); err != nil {
 			return Host{}, err
 		}
@@ -569,4 +588,9 @@ func audit(ctx context.Context, tx *sql.Tx, username, action, entity string, id 
 	_, err := tx.ExecContext(ctx, `INSERT INTO audit_log (username, action, entity, entity_id, before, after)
 		VALUES (?, ?, ?, ?, ?, ?)`, username, action, entity, strconv.FormatInt(id, 10), enc(before), enc(after))
 	return err
+}
+
+func mustJSON(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
 }

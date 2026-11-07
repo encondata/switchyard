@@ -53,6 +53,8 @@ type Options struct {
 	GeoIP *geoip.DB
 	// Hits is the traffic database (dashboard). Stats routes need it.
 	Hits *hits.DB
+	// Bans pushes the ban list to Caddy after manual changes.
+	Bans BanPusher
 }
 
 type srv struct {
@@ -74,6 +76,7 @@ type srv struct {
 	geo          *geoip.DB
 	hits         *hits.DB
 	topCache     topCache
+	bans         BanPusher
 }
 
 // New returns the root HTTP handler.
@@ -95,6 +98,7 @@ func New(opts Options) http.Handler {
 		restart:       opts.Restart,
 		geo:           opts.GeoIP,
 		hits:          opts.Hits,
+		bans:          opts.Bans,
 		ipFailures:    ratelimit.New(10, 15*time.Minute),
 		userFailures:  ratelimit.New(5, 15*time.Minute),
 	}
@@ -177,6 +181,17 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("GET /api/stats/top", s.requireUser(false, s.handleStatsTop))
 		mux.HandleFunc("GET /api/stats/tail", s.requireUser(false, s.handleStatsTail))
 		mux.HandleFunc("GET /api/stats/ip/{ip}", s.requireUser(false, s.handleStatsIP))
+		mux.HandleFunc("GET /api/honeypot", s.requireUser(false, s.handleGetHoneypot))
+		mux.HandleFunc("PUT /api/honeypot", s.requireEditor(s.handlePutHoneypot))
+		mux.HandleFunc("POST /api/honeypot/traps", s.requireEditor(s.handleSaveTrap))
+		mux.HandleFunc("PUT /api/honeypot/traps/{id}", s.requireEditor(s.handleSaveTrap))
+		mux.HandleFunc("DELETE /api/honeypot/traps/{id}", s.requireEditor(s.handleDeleteTrap))
+		mux.HandleFunc("GET /api/honeypot/activity", s.requireUser(false, s.handleHoneypotActivity))
+		mux.HandleFunc("GET /api/bans", s.requireUser(false, s.handleListBans))
+		mux.HandleFunc("POST /api/bans", s.requireEditor(s.handleAddBan))
+		mux.HandleFunc("DELETE /api/bans/{id}", s.requireEditor(s.handleRemoveBan))
+		mux.HandleFunc("POST /api/bans/unban", s.requireEditor(s.handleUnbanAddress))
+		mux.HandleFunc("GET /api/bans/export", s.requireUser(false, s.handleExportBans))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")

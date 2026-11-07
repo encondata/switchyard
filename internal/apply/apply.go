@@ -109,10 +109,86 @@ func (s *Service) Preview(ctx context.Context) (Preview, error) {
 	if p.Pending {
 		p.Diff = unifiedDiff(string(runningNorm), string(candidate), "running")
 	}
-	if p.LastApplied != nil {
-		p.Drift = hash(runningNorm) != p.LastApplied.SHA256
+	if last, err := s.Store.LastAppliedConfig(ctx); err == nil {
+		p.Drift = !SameIgnoringBans(runningNorm, []byte(last.JSON))
 	}
 	return p, nil
+}
+
+// SameIgnoringBans compares two configs, ignoring the ban lists, which CPM
+// updates in place between full applies (so they aren't drift).
+func SameIgnoringBans(a, b []byte) bool {
+	na, err1 := stripBans(a)
+	nb, err2 := stripBans(b)
+	return err1 == nil && err2 == nil && bytes.Equal(na, nb)
+}
+
+func stripBans(raw []byte) ([]byte, error) {
+	var v any
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	var walk func(any)
+	walk = func(n any) {
+		switch x := n.(type) {
+		case map[string]any:
+			if id, _ := x["@id"].(string); strings.HasPrefix(id, "cpm_banlist_") {
+				x["match"] = nil
+			}
+			for _, c := range x {
+				walk(c)
+			}
+		case []any:
+			for _, c := range x {
+				walk(c)
+			}
+		}
+	}
+	walk(v)
+	return json.Marshal(v)
+}
+
+// Patcher is the admin API call for in-place updates.
+type Patcher interface {
+	Patch(ctx context.Context, path string, value any) error
+}
+
+// PushBans updates the ban list in the running Caddy config by ID, without
+// a full reload (spec F6: bans reach every host within seconds), and saves
+// the result for Caddy restarts.
+func (s *Service) PushBans(ctx context.Context) error {
+	p, ok := s.Caddy.(Patcher)
+	if !ok {
+		return errors.New("this Caddy client can't patch the config")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	bans, err := s.Store.ActiveBanRanges(ctx)
+	if err != nil {
+		return err
+	}
+	never, err := s.Store.ListNeverBan(ctx)
+	if err != nil {
+		return err
+	}
+	var neverRanges []string
+	for _, n := range never {
+		neverRanges = append(neverRanges, n.CIDR)
+	}
+	match := compiler.BanMatch(bans, neverRanges)
+	for _, srv := range []string{"http", "https"} {
+		if err := p.Patch(ctx, "/id/"+compiler.BanListID(srv)+"/match", match); err != nil {
+			return fmt.Errorf("updating %s ban list (apply the config once if this is a new install): %w", srv, err)
+		}
+	}
+	if s.ConfigFile != "" {
+		if running, err := s.Caddy.Config(ctx); err == nil {
+			_ = writeAtomic(s.ConfigFile, running)
+		}
+	}
+	return nil
 }
 
 // Apply builds the config from the database and loads it into Caddy.

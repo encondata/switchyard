@@ -80,6 +80,30 @@ func (c *Client) load(ctx context.Context, config []byte, force bool) error {
 	return nil
 }
 
+// Patch replaces the value at a config path, e.g. "/id/cpm_banlist_http/match"
+// (PATCH /…), without reloading the rest of the config.
+func (c *Client) Patch(ctx context.Context, path string, value any) error {
+	body, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, "http://localhost"+path, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("caddy admin: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return &LoadError{Status: resp.StatusCode, Message: strings.TrimSpace(string(msg))}
+	}
+	return nil
+}
+
 // LoadError is Caddy rejecting a config.
 type LoadError struct {
 	Status  int

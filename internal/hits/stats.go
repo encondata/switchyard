@@ -242,3 +242,40 @@ func (d *DB) IP(ctx context.Context, ip string, from time.Time) (IPHistory, erro
 	h.Recent, err = d.queryHits(ctx, `SELECT `+hitCols+` FROM hits WHERE client_ip = ? ORDER BY ts DESC LIMIT 200`, ip)
 	return h, err
 }
+
+// HoneypotTop lists the most common paths, sources (ip) or user agents (ua)
+// among honeypot hits.
+func (d *DB) HoneypotTop(ctx context.Context, dim string, from, to time.Time, limit int) ([]TopRow, error) {
+	col := map[string]string{"path": "path", "ip": "client_ip", "ua": "user_agent", "host": "host"}[dim]
+	if col == "" {
+		return nil, fmt.Errorf("unknown dimension %q", dim)
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	//nolint:gosec // col comes from the fixed map above
+	rows, err := d.db.QueryContext(ctx, `SELECT `+col+`, COUNT(*), MAX(country) FROM hits
+		WHERE matched = 'honeypot' AND ts >= ? AND ts < ? GROUP BY `+col+` ORDER BY 2 DESC LIMIT ?`,
+		from.UnixMilli(), to.UnixMilli(), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := []TopRow{}
+	for rows.Next() {
+		var r TopRow
+		if err := rows.Scan(&r.Key, &r.Count, &r.Country); err != nil {
+			return nil, err
+		}
+		if dim != "ip" {
+			r.Country = ""
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// HoneypotRecent returns the latest honeypot hits.
+func (d *DB) HoneypotRecent(ctx context.Context, limit int) ([]Hit, error) {
+	return d.queryHits(ctx, `SELECT `+hitCols+` FROM hits WHERE matched = 'honeypot' ORDER BY id DESC LIMIT ?`, limit)
+}

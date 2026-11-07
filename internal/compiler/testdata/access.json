@@ -14,6 +14,40 @@
           ],
           "routes": [
             {
+              "@id": "cpm_banlist_http",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_blocked",
+                  "value": "banned"
+                },
+                {
+                  "abort": true,
+                  "handler": "static_response"
+                }
+              ],
+              "match": [
+                {
+                  "client_ip": {
+                    "ranges": [
+                      "0.0.0.0/32"
+                    ]
+                  },
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "203.0.113.7"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
               "@id": "cpm_host_1",
               "handle": [
                 {
@@ -166,6 +200,40 @@
             ":443"
           ],
           "routes": [
+            {
+              "@id": "cpm_banlist_https",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_blocked",
+                  "value": "banned"
+                },
+                {
+                  "abort": true,
+                  "handler": "static_response"
+                }
+              ],
+              "match": [
+                {
+                  "client_ip": {
+                    "ranges": [
+                      "0.0.0.0/32"
+                    ]
+                  },
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "203.0.113.7"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ],
+              "terminal": true
+            },
             {
               "@id": "cpm_not_configured_https",
               "handle": [

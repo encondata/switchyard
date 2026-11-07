@@ -1,0 +1,394 @@
+{
+  "admin": {
+    "config": {
+      "persist": false
+    },
+    "listen": "unix//run/caddy/admin.sock|0660"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "cpm_http": {
+          "listen": [
+            ":80"
+          ],
+          "logs": {
+            "default_logger_name": "cpm_access"
+          },
+          "routes": [
+            {
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "user_agent",
+                  "value": "{http.request.header.User-Agent}"
+                }
+              ]
+            },
+            {
+              "@id": "cpm_banlist_http",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_blocked",
+                  "value": "banned"
+                },
+                {
+                  "abort": true,
+                  "handler": "static_response"
+                }
+              ],
+              "match": [
+                {
+                  "client_ip": {
+                    "ranges": [
+                      "203.0.113.66",
+                      "198.51.100.0/24"
+                    ]
+                  },
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "192.168.1.0/24"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_host_1",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "early": true,
+                          "handler": "log_append",
+                          "key": "cpm_honeypot",
+                          "value": "trap"
+                        },
+                        {
+                          "body": "<!doctype html><html><head><title>Sign in</title></head><body style=\"font-family:sans-serif\"><form method=\"post\" action=\"#\" style=\"max-width:280px;margin:10% auto\"><h2>Administrator sign in</h2><p><input name=\"username\" placeholder=\"Username\"></p><p><input name=\"password\" type=\"password\" placeholder=\"Password\"></p><p><button>Sign in</button></p></form></body></html>",
+                          "handler": "static_response",
+                          "headers": {
+                            "Content-Type": [
+                              "text/html; charset=utf-8"
+                            ],
+                            "Server": [
+                              "nginx"
+                            ]
+                          },
+                          "status_code": "200"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "path": [
+                            "/.env"
+                          ]
+                        }
+                      ],
+                      "terminal": true
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "wp:80"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "blog.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_host_2_redirect",
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": "308"
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "app.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_catchall_http",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_honeypot",
+                  "value": "catchall"
+                },
+                {
+                  "body": "<!doctype html><html><head><title>Sign in</title></head><body style=\"font-family:sans-serif\"><form method=\"post\" action=\"#\" style=\"max-width:280px;margin:10% auto\"><h2>Administrator sign in</h2><p><input name=\"username\" placeholder=\"Username\"></p><p><input name=\"password\" type=\"password\" placeholder=\"Password\"></p><p><button>Sign in</button></p></form></body></html>",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/html; charset=utf-8"
+                    ],
+                    "Server": [
+                      "nginx"
+                    ]
+                  },
+                  "status_code": "200"
+                }
+              ]
+            }
+          ]
+        },
+        "cpm_https": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":443"
+          ],
+          "logs": {
+            "default_logger_name": "cpm_access"
+          },
+          "routes": [
+            {
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "user_agent",
+                  "value": "{http.request.header.User-Agent}"
+                }
+              ]
+            },
+            {
+              "@id": "cpm_banlist_https",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_blocked",
+                  "value": "banned"
+                },
+                {
+                  "abort": true,
+                  "handler": "static_response"
+                }
+              ],
+              "match": [
+                {
+                  "client_ip": {
+                    "ranges": [
+                      "203.0.113.66",
+                      "198.51.100.0/24"
+                    ]
+                  },
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "192.168.1.0/24"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_host_2",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "early": true,
+                          "handler": "log_append",
+                          "key": "cpm_honeypot",
+                          "value": "trap"
+                        },
+                        {
+                          "body": "<!doctype html><html><head><title>Sign in</title></head><body style=\"font-family:sans-serif\"><form method=\"post\" action=\"#\" style=\"max-width:280px;margin:10% auto\"><h2>Administrator sign in</h2><p><input name=\"username\" placeholder=\"Username\"></p><p><input name=\"password\" type=\"password\" placeholder=\"Password\"></p><p><button>Sign in</button></p></form></body></html>",
+                          "handler": "static_response",
+                          "headers": {
+                            "Content-Type": [
+                              "text/html; charset=utf-8"
+                            ],
+                            "Server": [
+                              "nginx"
+                            ]
+                          },
+                          "status_code": "200"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "path": [
+                            "/.env",
+                            "/wp-login.php"
+                          ]
+                        }
+                      ],
+                      "terminal": true
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "app:80"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "app.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_catchall_https",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_honeypot",
+                  "value": "catchall"
+                },
+                {
+                  "body": "<!doctype html><html><head><title>Sign in</title></head><body style=\"font-family:sans-serif\"><form method=\"post\" action=\"#\" style=\"max-width:280px;margin:10% auto\"><h2>Administrator sign in</h2><p><input name=\"username\" placeholder=\"Username\"></p><p><input name=\"password\" type=\"password\" placeholder=\"Password\"></p><p><button>Sign in</button></p></form></body></html>",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/html; charset=utf-8"
+                    ],
+                    "Server": [
+                      "nginx"
+                    ]
+                  },
+                  "status_code": "200"
+                }
+              ]
+            }
+          ],
+          "tls_connection_policies": [
+            {
+              "default_sni": "cpm-honeypot.invalid",
+              "fallback_sni": "cpm-honeypot.invalid"
+            }
+          ]
+        }
+      }
+    },
+    "pki": {
+      "certificate_authorities": {
+        "local": {
+          "install_trust": false
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "issuers": [
+              {
+                "module": "internal"
+              }
+            ],
+            "subjects": [
+              "app.localhost",
+              "cpm-honeypot.invalid"
+            ]
+          }
+        ]
+      },
+      "certificates": {
+        "automate": [
+          "cpm-honeypot.invalid"
+        ]
+      }
+    }
+  },
+  "logging": {
+    "logs": {
+      "cpm_access": {
+        "encoder": {
+          "fields": {
+            "request>headers": {
+              "filter": "delete"
+            },
+            "request>uri": {
+              "filter": "regexp",
+              "regexp": "\\?.*$",
+              "value": ""
+            },
+            "resp_headers": {
+              "filter": "delete"
+            }
+          },
+          "format": "filter",
+          "wrap": {
+            "format": "json"
+          }
+        },
+        "include": [
+          "http.log.access.cpm_access"
+        ],
+        "writer": {
+          "filename": "/var/log/caddy/access.log",
+          "output": "file",
+          "roll_keep": 3,
+          "roll_size_mb": 100
+        }
+      },
+      "default": {
+        "exclude": [
+          "http.log.access.cpm_access"
+        ]
+      }
+    }
+  }
+}

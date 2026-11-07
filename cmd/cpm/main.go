@@ -20,6 +20,7 @@ import (
 	"github.com/encondata/caddyproxymanager/internal/compiler"
 	"github.com/encondata/caddyproxymanager/internal/geoip"
 	"github.com/encondata/caddyproxymanager/internal/hits"
+	"github.com/encondata/caddyproxymanager/internal/honeypot"
 	"github.com/encondata/caddyproxymanager/internal/monitor"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/server"
@@ -135,11 +136,16 @@ func main() {
 	}
 	defer func() { _ = hitsDB.Close() }()
 	retainDays, _ := strconv.Atoi(os.Getenv("CPM_HIT_RETENTION_DAYS"))
+	scorer := &honeypot.Scorer{Store: st, Pusher: applier, Log: logger}
 	ingester := &hits.Ingester{
 		DB: hitsDB, File: envOr("CPM_ACCESS_LOG", "/var/log/caddy/access.log"), Geo: geo, Log: logger,
 		RetainHits: time.Duration(retainDays) * 24 * time.Hour,
+		OnHits:     scorer.HandleHits,
 	}
 	go ingester.Run(ctx)
+	if caddy != nil {
+		go scorer.Maintain(ctx)
+	}
 
 	var mon *monitor.Monitor
 	if caddy != nil {
@@ -158,7 +164,7 @@ func main() {
 			Version: version, UI: web.Dist(), Logger: logger,
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
 			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"), Box: box,
-			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo, Hits: hitsDB,
+			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo, Hits: hitsDB, Bans: scorer,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

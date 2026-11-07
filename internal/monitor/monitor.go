@@ -7,8 +7,6 @@ package monitor
 import (
 	"bufio"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -154,11 +152,7 @@ func (m *Monitor) Check(ctx context.Context) error {
 		snap.CaddyReachable = true
 		errs = append(errs, m.Store.ResolveAlert(ctx, store.AlertCaddyUnreachable, "caddy"))
 		if last, lerr := m.Store.LastAppliedConfig(ctx); lerr == nil {
-			norm, nerr := apply.Normalize(running)
-			if nerr == nil {
-				sum := sha256.Sum256(norm)
-				snap.Drift = hex.EncodeToString(sum[:]) != last.SHA256
-			}
+			snap.Drift = !apply.SameIgnoringBans(running, []byte(last.JSON))
 			if snap.Drift {
 				errs = append(errs, m.raise(ctx, store.AlertDrift, "caddy",
 					"Caddy is running a config CPM didn't apply. Review & apply to put CPM's config back."))

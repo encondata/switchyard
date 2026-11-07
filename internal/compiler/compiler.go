@@ -116,8 +116,28 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 			internalSubjects = append(internalSubjects, h.Domains...)
 		}
 	}
-	httpRoutes = append(httpRoutes, notConfiguredRoute("http"))
-	httpsRoutes = append(httpsRoutes, notConfiguredRoute("https"))
+	hp := access.Honeypot
+	if hp.Settings.Enabled {
+		httpRoutes = append(httpRoutes, catchallRoute("http", hp.Settings.Response))
+		httpsRoutes = append(httpsRoutes, catchallRoute("https", hp.Settings.Response))
+		internalSubjects = append(internalSubjects, HoneypotSNI)
+	} else {
+		httpRoutes = append(httpRoutes, notConfiguredRoute("http"))
+		httpsRoutes = append(httpsRoutes, notConfiguredRoute("https"))
+	}
+	// Every request first: tag the user agent for the access log, then the
+	// ban list (spec F4 step 2; it comes after the never-ban check).
+	head := func(server string) []any {
+		var r []any
+		if s.AccessLogFile != "" {
+			r = append(r, obj{"handle": []any{obj{
+				"handler": "log_append", "key": "user_agent", "value": "{http.request.header.User-Agent}", "early": true,
+			}}})
+		}
+		return append(r, banRoute(server, hp.Bans, access.NeverBan))
+	}
+	httpRoutes = append(head("http"), httpRoutes...)
+	httpsRoutes = append(head("https"), httpsRoutes...)
 
 	cfg := obj{
 		"admin": obj{
@@ -131,11 +151,7 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 						"listen": []string{":80"},
 						"routes": httpRoutes,
 					},
-					HTTPSServer: obj{
-						"listen":          []string{":443"},
-						"routes":          httpsRoutes,
-						"automatic_https": obj{"disable_redirects": true},
-					},
+					HTTPSServer: httpsServer(httpsRoutes, hp.Settings.Enabled),
 				},
 			},
 			// The internal CA's root can't be installed into a container's
@@ -178,6 +194,16 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 	if len(policies) > 0 {
 		cfg["apps"].(obj)["tls"] = obj{"automation": obj{"policies": policies}}
 	}
+	if hp.Settings.Enabled {
+		// Make sure the honeypot's internal-CA certificate exists even though
+		// no host matcher names it.
+		tlsApp, _ := cfg["apps"].(obj)["tls"].(obj)
+		if tlsApp == nil {
+			tlsApp = obj{}
+			cfg["apps"].(obj)["tls"] = tlsApp
+		}
+		tlsApp["certificates"] = obj{"automate": []string{HoneypotSNI}}
+	}
 	logs := obj{}
 	if s.TLSLogFile != "" {
 		logs["cpm_tls"] = obj{
@@ -192,8 +218,19 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 			servers[name].(obj)["logs"] = obj{"default_logger_name": "cpm_access"}
 		}
 		logs["cpm_access"] = obj{
-			"writer":  obj{"output": "file", "filename": s.AccessLogFile, "roll_size_mb": 100, "roll_keep": 3},
-			"encoder": obj{"format": "json"},
+			"writer": obj{"output": "file", "filename": s.AccessLogFile, "roll_size_mb": 100, "roll_keep": 3},
+			// Keep secrets out of the file: no query strings (they can hold
+			// tokens) and no headers (cookies, auth). The user agent comes in
+			// its own field (see the first route of each server).
+			"encoder": obj{
+				"format": "filter",
+				"wrap":   obj{"format": "json"},
+				"fields": obj{
+					"request>headers": obj{"filter": "delete"},
+					"resp_headers":    obj{"filter": "delete"},
+					"request>uri":     obj{"filter": "regexp", "regexp": `\?.*$`, "value": ""},
+				},
+			},
 			"include": []string{"http.log.access.cpm_access"},
 		}
 		// Keep access logs out of Caddy's stderr log.
@@ -279,6 +316,11 @@ func hostRoute(h store.Host, access store.AccessState, s Settings) (obj, error) 
 	subroutes, err := accessRoutes(h, access, s)
 	if err != nil {
 		return nil, err
+	}
+	if access.Honeypot.Settings.Enabled {
+		if tr := trapRoute(h, access.Honeypot); tr != nil {
+			subroutes = append(subroutes, tr)
+		}
 	}
 	if len(headerHandlers) > 0 {
 		subroutes = append(subroutes, obj{"handle": headerHandlers})
@@ -410,6 +452,117 @@ func redirectToHTTPSRoute(h store.Host) obj {
 			"status_code": "308",
 			"headers":     obj{"Location": []string{"https://{http.request.host}{http.request.uri}"}},
 		}},
+		"terminal": true,
+	}
+}
+
+// HoneypotSNI is the name of the honeypot's internal-CA certificate, used
+// for TLS connections to names CPM doesn't serve (and bare-IP requests).
+// It is under .invalid, so it can never be a real, public name.
+const HoneypotSNI = "cpm-honeypot.invalid"
+
+// BanListID is the @id of each server's ban list route, which CPM updates
+// in place when bans change (spec §2, principle 4).
+func BanListID(server string) string { return "cpm_banlist_" + server }
+
+// noMatchRange keeps the ban list's matcher valid when nobody is banned;
+// no client can connect from 0.0.0.0.
+const noMatchRange = "0.0.0.0/32"
+
+// BanMatch is the ban list route's matcher for the given bans.
+func BanMatch(bans, never []string) []any {
+	ranges := bans
+	if len(ranges) == 0 {
+		ranges = []string{noMatchRange}
+	}
+	m := obj{"client_ip": obj{"ranges": ranges}}
+	if len(never) > 0 {
+		m["not"] = []any{obj{"client_ip": obj{"ranges": never}}}
+	}
+	return []any{m}
+}
+
+func banRoute(server string, bans, never []string) obj {
+	return obj{
+		"@id":   BanListID(server),
+		"match": BanMatch(bans, never),
+		"handle": []any{
+			obj{"handler": "log_append", "key": "cpm_blocked", "value": "banned", "early": true},
+			obj{"handler": "static_response", "abort": true},
+		},
+		"terminal": true,
+	}
+}
+
+func httpsServer(routes []any, honeypot bool) obj {
+	srv := obj{
+		"listen":          []string{":443"},
+		"routes":          routes,
+		"automatic_https": obj{"disable_redirects": true},
+	}
+	if honeypot {
+		// Unknown names and bare-IP requests get the honeypot certificate,
+		// so the catch-all can answer them over HTTPS too.
+		srv["tls_connection_policies"] = []any{obj{"fallback_sni": HoneypotSNI, "default_sni": HoneypotSNI}}
+	}
+	return srv
+}
+
+// honeypotHandlers tag the request for the scorer and serve fake,
+// static content (nothing is executed and no upstream is reached).
+func honeypotHandlers(reason, response string) []any {
+	h := []any{obj{"handler": "log_append", "key": "cpm_honeypot", "value": reason, "early": true}}
+	switch response {
+	case "server":
+		h = append(h, obj{
+			"handler": "static_response", "status_code": "200",
+			"headers": obj{"Content-Type": []string{"text/html; charset=utf-8"}, "Server": []string{"Apache/2.4.41 (Ubuntu)"}},
+			"body":    fakeServerPage,
+		})
+	case "empty":
+		h = append(h, obj{"handler": "static_response", "status_code": "200"})
+	case "404":
+		h = append(h, obj{"handler": "static_response", "status_code": "404", "body": "Not Found\n"})
+	default: // login
+		h = append(h, obj{
+			"handler": "static_response", "status_code": "200",
+			"headers": obj{"Content-Type": []string{"text/html; charset=utf-8"}, "Server": []string{"nginx"}},
+			"body":    fakeLoginPage,
+		})
+	}
+	return h
+}
+
+const fakeLoginPage = `<!doctype html><html><head><title>Sign in</title></head><body style="font-family:sans-serif">` +
+	`<form method="post" action="#" style="max-width:280px;margin:10% auto"><h2>Administrator sign in</h2>` +
+	`<p><input name="username" placeholder="Username"></p><p><input name="password" type="password" placeholder="Password"></p>` +
+	`<p><button>Sign in</button></p></form></body></html>`
+
+const fakeServerPage = `<!doctype html><html><head><title>Apache2 Ubuntu Default Page: It works</title></head>` +
+	`<body><h1>It works!</h1><p>This is the default welcome page used to test the correct operation of the Apache2 server.</p></body></html>`
+
+func catchallRoute(server, response string) obj {
+	return obj{"@id": "cpm_catchall_" + server, "handle": honeypotHandlers("catchall", response)}
+}
+
+// trapRoute sends known scanner paths on a host to the honeypot.
+func trapRoute(h store.Host, hp store.HoneypotState) obj {
+	skip := map[string]bool{}
+	for _, e := range h.TrapExceptions {
+		skip[e] = true
+	}
+	var paths []string
+	for _, t := range hp.Traps {
+		if !skip[t.Pattern] {
+			paths = append(paths, t.Pattern)
+		}
+	}
+	if len(paths) == 0 {
+		return nil
+	}
+	return obj{
+		"match":    []any{obj{"path": paths}},
+		"handle":   honeypotHandlers("trap", hp.Settings.Response),
 		"terminal": true,
 	}
 }

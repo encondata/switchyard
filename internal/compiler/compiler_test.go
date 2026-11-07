@@ -362,3 +362,42 @@ func TestAccessLogConfig(t *testing.T) {
 		_ = os.WriteFile(p, out, 0o600)
 	}
 }
+
+func TestGoldenHoneypot(t *testing.T) {
+	access := store.AccessState{
+		Folders:  map[int64]store.Folder{},
+		Policies: map[int64]store.AccessPolicy{},
+		NeverBan: []string{"192.168.1.0/24"},
+		Honeypot: store.HoneypotState{
+			Settings: store.HoneypotSettings{Enabled: true, Response: "login", CatchallScore: 1, Threshold: 10, WindowHours: 24, BanDays: 7, MaxBanDays: 90},
+			Traps:    []store.TrapPath{{ID: 1, Pattern: "/.env", Score: 10, Enabled: true}, {ID: 2, Pattern: "/wp-login.php", Score: 10, Enabled: true}},
+			Bans:     []string{"203.0.113.66", "198.51.100.0/24"},
+		},
+	}
+	hosts := []store.Host{
+		normalized(store.Host{ID: 1, Type: store.HostProxy, Enabled: true, Domains: []string{"blog.localhost"}, TLSMode: store.TLSOff,
+			Upstreams: []store.Upstream{{Host: "wp"}}, TrapExceptions: []string{"/wp-login.php"}}),
+		normalized(store.Host{ID: 2, Type: store.HostProxy, Enabled: true, Domains: []string{"app.localhost"}, TLSMode: store.TLSInternal,
+			Upstreams: []store.Upstream{{Host: "app"}}, ForceHTTPS: true}),
+	}
+	st := settings
+	st.AccessLogFile = "/var/log/caddy/access.log"
+	got, err := Compile(st, hosts, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "honeypot.json")
+	if *update {
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, _ := os.ReadFile(path)
+	if !bytes.Equal(got, want) {
+		t.Errorf("honeypot config differs from %s; run with -update if intended.\n%s", path, got)
+	}
+	if p := os.Getenv("CPM_WRITE_CONFIG"); p != "" {
+		_ = os.WriteFile(p, got, 0o600)
+	}
+}

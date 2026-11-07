@@ -10,6 +10,7 @@ import { AccountPage, EnrollRequired } from './account'
 import { AuditPage, UsersPage } from './users'
 import { ImportPage } from './importer'
 import { Dashboard } from './dashboard'
+import { HoneypotPage } from './honeypot'
 
 // Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
 function useRoute(): string {
@@ -147,6 +148,8 @@ function App() {
   else if (route === '/status' || route === '/health')
     body = <HealthPage isAdmin={user.role === 'admin'} />
   else if (route === '/dashboard') body = <Dashboard canEdit={canEdit} />
+  else if (route === '/honeypot')
+    body = <HoneypotPage canEdit={canEdit} onChanged={refreshPending} />
   else if (route === '/certificates') body = <Certificates canEdit={canEdit} />
   else if (route === '/dns')
     body = (
@@ -168,6 +171,7 @@ function App() {
     ['/hosts', 'Hosts'],
     ['/access', 'Access'],
     ['/dns', 'DNS'],
+    ['/honeypot', 'Honeypot'],
     ['/certificates', 'Certificates'],
     ['/changes', 'Review & apply'],
     ['/history', 'History'],

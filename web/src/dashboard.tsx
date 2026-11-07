@@ -310,6 +310,26 @@ function IPPanel({
   }
   useEffect(load, [ip])
 
+  async function banIP() {
+    try {
+      const r = await api.addBan(ip, 'Banned from the dashboard', 7)
+      setInfo(r.warning || `${ip} is banned on every host.`)
+      load()
+    } catch (err) {
+      setError(message(err))
+    }
+  }
+
+  async function unbanIP() {
+    try {
+      const r = await api.unbanAddress(ip)
+      setInfo(r.warning || `Lifted the ban on ${ip}.`)
+      load()
+    } catch (err) {
+      setError(message(err))
+    }
+  }
+
   async function neverBlock() {
     try {
       await api.addNeverBan(ip, 'Added from the dashboard')
@@ -345,11 +365,28 @@ function IPPanel({
               </>
             )}
           </p>
-          {canEdit && !d.never_ban && (
+          {d.banned && (
+            <p>
+              <span className="bad">Banned.</span>
+            </p>
+          )}
+          {canEdit && (
             <div className="actions">
-              <button className="secondary" onClick={neverBlock}>
-                Never block this IP
-              </button>
+              {!d.never_ban && (
+                <button className="secondary" onClick={neverBlock}>
+                  Never block this IP
+                </button>
+              )}
+              {!d.never_ban && !d.banned && (
+                <button className="secondary danger" onClick={banIP}>
+                  Ban for 7 days
+                </button>
+              )}
+              {d.banned && (
+                <button className="secondary" onClick={unbanIP}>
+                  Lift ban
+                </button>
+              )}
             </div>
           )}
           {d.hosts.length > 0 && (
