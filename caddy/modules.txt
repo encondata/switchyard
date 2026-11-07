@@ -10,10 +10,10 @@ github.com/caddy-dns/cloudflare@v0.2.4
 github.com/porech/caddy-maxmind-geolocation@v1.0.3
 
 # Phase 2, optional: per-host rate limits (CPM-26)
-# github.com/mholt/caddy-ratelimit@vX.Y.Z
+github.com/mholt/caddy-ratelimit@v0.1.0
 
 # Phase 3, optional: CrowdSec community block lists (CPM-32)
-# github.com/hslatman/caddy-crowdsec-bouncer@vX.Y.Z
+github.com/hslatman/caddy-crowdsec-bouncer@v0.15.0
 
 # Later, only if needed: TCP/UDP streams (CPM-33)
 # github.com/mholt/caddy-l4@vX.Y.Z

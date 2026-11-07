@@ -35,6 +35,9 @@ type Folder struct {
 	// Default headers for hosts inside (applied before the host's own).
 	RequestHeaders  []HeaderRule `json:"request_headers"`
 	ResponseHeaders []HeaderRule `json:"response_headers"`
+	// Default rate limit for hosts inside without their own (0 = none).
+	RateLimitEvents int `json:"rate_limit_events"`
+	RateLimitWindow int `json:"rate_limit_window"`
 }
 
 // Access policy modes and responses (spec F4).
@@ -110,6 +113,7 @@ func ParseRule(raw string) (string, error) {
 func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT f.id, f.name, f.parent_id, f.sort, f.dns_provider_id, f.request_headers, f.response_headers,
+			f.rate_limit_events, f.rate_limit_window,
 			(SELECT COUNT(*) FROM hosts h WHERE h.folder_id = f.id)
 		FROM folders f ORDER BY f.sort, f.name COLLATE NOCASE`)
 	if err != nil {
@@ -121,7 +125,8 @@ func (s *Store) ListFolders(ctx context.Context) ([]Folder, error) {
 		var f Folder
 		var parent, dnsProvider sql.NullInt64
 		var reqH, respH string
-		if err := rows.Scan(&f.ID, &f.Name, &parent, &f.Sort, &dnsProvider, &reqH, &respH, &f.HostCount); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &parent, &f.Sort, &dnsProvider, &reqH, &respH,
+			&f.RateLimitEvents, &f.RateLimitWindow, &f.HostCount); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -194,6 +199,12 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 	if msg := validateHeaders(f.ResponseHeaders); msg != "" {
 		errs["response_headers"] = msg
 	}
+	if f.RateLimitWindow <= 0 {
+		f.RateLimitWindow = 60
+	}
+	if msg := checkRateLimit(f.RateLimitEvents, f.RateLimitWindow); msg != "" {
+		errs["rate_limit"] = msg
+	}
 	if len(errs) > 0 {
 		return Folder{}, errs
 	}
@@ -233,9 +244,10 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 		}
 	}
 	if f.ID == 0 {
-		res, err := tx.ExecContext(ctx, `INSERT INTO folders (name, parent_id, sort, dns_provider_id, request_headers, response_headers)
-			VALUES (?, ?, ?, ?, ?, ?)`,
-			f.Name, f.ParentID, f.Sort, f.DNSProviderID, encodeHeaders(f.RequestHeaders), encodeHeaders(f.ResponseHeaders))
+		res, err := tx.ExecContext(ctx, `INSERT INTO folders (name, parent_id, sort, dns_provider_id, request_headers, response_headers,
+			rate_limit_events, rate_limit_window) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			f.Name, f.ParentID, f.Sort, f.DNSProviderID, encodeHeaders(f.RequestHeaders), encodeHeaders(f.ResponseHeaders),
+			f.RateLimitEvents, f.RateLimitWindow)
 		if err != nil {
 			return Folder{}, folderNameError(err)
 		}
@@ -244,9 +256,9 @@ func (s *Store) SaveFolder(ctx context.Context, f Folder, username string) (Fold
 		}
 	} else if _, err := tx.ExecContext(ctx,
 		`UPDATE folders SET name = ?, parent_id = ?, sort = ?, dns_provider_id = ?, request_headers = ?,
-			response_headers = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			response_headers = ?, rate_limit_events = ?, rate_limit_window = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		f.Name, f.ParentID, f.Sort, f.DNSProviderID, encodeHeaders(f.RequestHeaders), encodeHeaders(f.ResponseHeaders),
-		f.ID); err != nil {
+		f.RateLimitEvents, f.RateLimitWindow, f.ID); err != nil {
 		return Folder{}, folderNameError(err)
 	}
 	if err := setLinks(ctx, tx, "folder_policies", "folder_id", f.ID, f.PolicyIDs); err != nil {
@@ -590,6 +602,7 @@ type AccessState struct {
 	Policies map[int64]AccessPolicy
 	NeverBan []string
 	Honeypot HoneypotState
+	CrowdSec CrowdSecSettings
 }
 
 // LoadAccessState reads folders, policies and the never-block list.
@@ -616,7 +629,10 @@ func (s *Store) LoadAccessState(ctx context.Context) (AccessState, error) {
 	for _, n := range nb {
 		st.NeverBan = append(st.NeverBan, n.CIDR)
 	}
-	st.Honeypot, err = s.LoadHoneypotState(ctx)
+	if st.Honeypot, err = s.LoadHoneypotState(ctx); err != nil {
+		return st, err
+	}
+	st.CrowdSec, err = s.CrowdSec(ctx)
 	return st, err
 }
 
@@ -680,6 +696,27 @@ func (st AccessState) EffectiveHeaders(h Host) (request, response []HeaderRule) 
 	request = append(request, h.RequestHeaders...)
 	response = append(response, h.ResponseHeaders...)
 	return request, response
+}
+
+// EffectiveRateLimit returns the host's rate limit, or the nearest
+// folder's; ok is false if none applies.
+func (st AccessState) EffectiveRateLimit(h Host) (events, window int, ok bool) {
+	if h.RateLimitEvents > 0 {
+		return h.RateLimitEvents, h.RateLimitWindow, true
+	}
+	visited := map[int64]bool{}
+	for fid := h.FolderID; fid != nil && !visited[*fid]; {
+		visited[*fid] = true
+		f, found := st.Folders[*fid]
+		if !found {
+			break
+		}
+		if f.RateLimitEvents > 0 {
+			return f.RateLimitEvents, f.RateLimitWindow, true
+		}
+		fid = f.ParentID
+	}
+	return 0, 0, false
 }
 
 // EffectiveDNSProvider returns the DNS provider a host uses for the DNS

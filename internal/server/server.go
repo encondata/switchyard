@@ -192,6 +192,8 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("DELETE /api/bans/{id}", s.requireEditor(s.handleRemoveBan))
 		mux.HandleFunc("POST /api/bans/unban", s.requireEditor(s.handleUnbanAddress))
 		mux.HandleFunc("GET /api/bans/export", s.requireUser(false, s.handleExportBans))
+		mux.HandleFunc("GET /api/crowdsec", s.requireAdmin(s.handleGetCrowdSec))
+		mux.HandleFunc("PUT /api/crowdsec", s.requireAdmin(s.handlePutCrowdSec))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")

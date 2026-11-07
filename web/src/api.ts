@@ -68,6 +68,8 @@ export type Host = {
   health_check_interval: number
   advanced_json: string
   trap_exceptions: string[]
+  rate_limit_events: number
+  rate_limit_window: number
   created_at?: string
   updated_at?: string
 }
@@ -101,6 +103,8 @@ export type Folder = {
   dns_provider_id: number | null
   request_headers: HeaderRule[]
   response_headers: HeaderRule[]
+  rate_limit_events: number
+  rate_limit_window: number
 }
 
 export type DNSProvider = {
@@ -545,6 +549,8 @@ export const api = {
       | 'dns_provider_id'
       | 'request_headers'
       | 'response_headers'
+      | 'rate_limit_events'
+      | 'rate_limit_window'
     >,
   ) =>
     f.id
@@ -618,6 +624,17 @@ export const api = {
     request<{ lifted: number; warning: string }>('POST', '/api/bans/unban', {
       cidr,
     }),
+  crowdsec: () =>
+    request<{ enabled: boolean; api_url: string; key_set: boolean }>(
+      'GET',
+      '/api/crowdsec',
+    ),
+  saveCrowdSec: (enabled: boolean, api_url: string, api_key: string) =>
+    request<{ enabled: boolean; api_url: string; key_set: boolean }>(
+      'PUT',
+      '/api/crowdsec',
+      { enabled, api_url, api_key },
+    ),
   statsIP: (ip: string) =>
     request<IPDetail>('GET', `/api/stats/ip/${encodeURIComponent(ip)}`),
 
@@ -727,5 +744,7 @@ export function newHost(): Host {
     health_check_interval: 30,
     advanced_json: '',
     trap_exceptions: [],
+    rate_limit_events: 0,
+    rate_limit_window: 60,
   }
 }

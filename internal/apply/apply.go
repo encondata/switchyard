@@ -262,6 +262,21 @@ func (s *Service) SyncSecrets(ctx context.Context) error {
 			return err
 		}
 	}
+	if s.Box.Ready() {
+		key, err := s.Store.CrowdSecKey(ctx, s.Box)
+		if err != nil {
+			return err
+		}
+		path := compiler.CrowdSecKeyFile(s.SecretsDir)
+		if key != "" {
+			keep[filepath.Base(path)] = true
+			if err := writeFile(path, []byte(key), 0o600); err != nil {
+				return err
+			}
+		} else {
+			_ = os.Remove(path)
+		}
+	}
 	entries, err := os.ReadDir(s.SecretsDir)
 	if err != nil {
 		return err

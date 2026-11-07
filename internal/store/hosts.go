@@ -66,9 +66,13 @@ type Host struct {
 	// rules and before the host's own handler. Admins only.
 	AdvancedJSON string `json:"advanced_json"`
 	// TrapExceptions are honeypot trap paths this host serves normally.
-	TrapExceptions []string  `json:"trap_exceptions"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	TrapExceptions []string `json:"trap_exceptions"`
+	// RateLimitEvents requests per RateLimitWindow seconds per client IP;
+	// 0 means use the nearest folder's limit (or none).
+	RateLimitEvents int       `json:"rate_limit_events"`
+	RateLimitWindow int       `json:"rate_limit_window"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // Upstream is a backend a proxy host forwards to.
@@ -158,6 +162,9 @@ func (h *Host) Normalize() {
 	h.RequestHeaders = normalizeHeaders(h.RequestHeaders)
 	h.ResponseHeaders = normalizeHeaders(h.ResponseHeaders)
 	h.HealthCheckPath = strings.TrimSpace(h.HealthCheckPath)
+	if h.RateLimitWindow <= 0 {
+		h.RateLimitWindow = 60
+	}
 	var exc []string
 	for _, e := range h.TrapExceptions {
 		if e = strings.TrimSpace(e); e != "" {
@@ -270,6 +277,9 @@ func (h *Host) Validate() error {
 	} else {
 		h.AdvancedJSON = canon
 	}
+	if msg := checkRateLimit(h.RateLimitEvents, h.RateLimitWindow); msg != "" {
+		errs["rate_limit"] = msg
+	}
 	if len(h.TrapExceptions) > 100 {
 		errs["trap_exceptions"] = "at most 100 exceptions"
 	}
@@ -310,7 +320,7 @@ var ErrDomainTaken = errors.New("domain already used by another host")
 const hostColumns = `id, type, enabled, upstreams, load_balancing, tls_mode, force_https, hsts,
 	compression, redirect_to, redirect_code, preserve_path, notes, folder_id, acme_challenge, dns_provider_id,
 	request_headers, response_headers, health_check_path, health_check_interval, advanced_json, trap_exceptions,
-	created_at, updated_at`
+	rate_limit_events, rate_limit_window, created_at, updated_at`
 
 func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	var h Host
@@ -320,7 +330,7 @@ func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	err := row.Scan(&h.ID, &h.Type, &h.Enabled, &upstreams, &h.LoadBalancing, &h.TLSMode, &h.ForceHTTPS,
 		&h.HSTS, &h.Compression, &h.RedirectTo, &h.RedirectCode, &h.PreservePath, &h.Notes, &folder,
 		&challenge, &dnsProvider, &reqHeaders, &respHeaders, &h.HealthCheckPath, &h.HealthCheckInterval,
-		&h.AdvancedJSON, &trapExc, &h.CreatedAt, &h.UpdatedAt)
+		&h.AdvancedJSON, &trapExc, &h.RateLimitEvents, &h.RateLimitWindow, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return h, err
 	}
@@ -495,13 +505,13 @@ func (s *Store) SaveHostAs(ctx context.Context, h Host, username string, isAdmin
 	args := []any{h.Type, h.Enabled, string(upstreams), h.LoadBalancing, tlsMode, h.ForceHTTPS, h.HSTS,
 		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID, challenge, h.DNSProviderID,
 		encodeHeaders(h.RequestHeaders), encodeHeaders(h.ResponseHeaders), h.HealthCheckPath, h.HealthCheckInterval,
-		h.AdvancedJSON, mustJSON(h.TrapExceptions)}
+		h.AdvancedJSON, mustJSON(h.TrapExceptions), h.RateLimitEvents, h.RateLimitWindow}
 	if h.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO hosts (type, enabled, upstreams, load_balancing, tls_mode,
 			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes, folder_id,
 			acme_challenge, dns_provider_id, request_headers, response_headers, health_check_path,
-			health_check_interval, advanced_json, trap_exceptions)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
+			health_check_interval, advanced_json, trap_exceptions, rate_limit_events, rate_limit_window)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 		if err != nil {
 			return Host{}, err
 		}
@@ -513,7 +523,7 @@ func (s *Store) SaveHostAs(ctx context.Context, h Host, username string, isAdmin
 			tls_mode = ?, force_https = ?, hsts = ?, compression = ?, redirect_to = ?, redirect_code = ?,
 			preserve_path = ?, notes = ?, folder_id = ?, acme_challenge = ?, dns_provider_id = ?,
 			request_headers = ?, response_headers = ?, health_check_path = ?, health_check_interval = ?,
-			advanced_json = ?, trap_exceptions = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			advanced_json = ?, trap_exceptions = ?, rate_limit_events = ?, rate_limit_window = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 			append(args, h.ID)...); err != nil {
 			return Host{}, err
 		}
@@ -593,4 +603,15 @@ func audit(ctx context.Context, tx *sql.Tx, username, action, entity string, id 
 func mustJSON(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// checkRateLimit validates a rate limit (0 events = off).
+func checkRateLimit(events, window int) string {
+	if events < 0 || events > 1_000_000 {
+		return "0 (off) to 1,000,000 requests"
+	}
+	if events > 0 && (window < 1 || window > 3600) {
+		return "a window of 1 to 3600 seconds"
+	}
+	return ""
 }

@@ -149,7 +149,13 @@ function App() {
     body = <HealthPage isAdmin={user.role === 'admin'} />
   else if (route === '/dashboard') body = <Dashboard canEdit={canEdit} />
   else if (route === '/honeypot')
-    body = <HoneypotPage canEdit={canEdit} onChanged={refreshPending} />
+    body = (
+      <HoneypotPage
+        canEdit={canEdit}
+        isAdmin={user.role === 'admin'}
+        onChanged={refreshPending}
+      />
+    )
   else if (route === '/certificates') body = <Certificates canEdit={canEdit} />
   else if (route === '/dns')
     body = (

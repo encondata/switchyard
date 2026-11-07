@@ -189,3 +189,27 @@ func (s *srv) handleExportBans(w http.ResponseWriter, r *http.Request) {
 	}
 	cw.Flush()
 }
+
+func (s *srv) handleGetCrowdSec(w http.ResponseWriter, r *http.Request) {
+	c, err := s.store.CrowdSec(r.Context())
+	if s.storeError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}
+
+func (s *srv) handlePutCrowdSec(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool   `json:"enabled"`
+		APIURL  string `json:"api_url"`
+		APIKey  string `json:"api_key"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	c, err := s.store.SaveCrowdSec(r.Context(), store.CrowdSecSettings{Enabled: req.Enabled, APIURL: req.APIURL}, req.APIKey, s.box, userFrom(r).Username)
+	if s.storeError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, c)
+}

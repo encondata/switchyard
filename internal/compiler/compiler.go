@@ -56,6 +56,9 @@ type Settings struct {
 	TLSLogFile string
 }
 
+// CrowdSecKeyFile is the file holding the CrowdSec bouncer key.
+func CrowdSecKeyFile(dir string) string { return strings.TrimRight(dir, "/") + "/crowdsec.key" }
+
 // DNSTokenFile is the file holding a DNS provider's token.
 func DNSTokenFile(dir string, providerID int64) string {
 	return fmt.Sprintf("%s/dns-%d.token", strings.TrimRight(dir, "/"), providerID)
@@ -125,6 +128,8 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 		httpRoutes = append(httpRoutes, notConfiguredRoute("http"))
 		httpsRoutes = append(httpsRoutes, notConfiguredRoute("https"))
 	}
+	// CrowdSec community block lists (optional), checked after CPM's bans.
+	crowdsec := access.CrowdSec.Enabled && access.CrowdSec.KeySet && s.SecretsDir != ""
 	// Every request first: tag the user agent for the access log, then the
 	// ban list (spec F4 step 2; it comes after the never-ban check).
 	head := func(server string) []any {
@@ -134,7 +139,15 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 				"handler": "log_append", "key": "user_agent", "value": "{http.request.header.User-Agent}", "early": true,
 			}}})
 		}
-		return append(r, banRoute(server, hp.Bans, access.NeverBan))
+		r = append(r, banRoute(server, hp.Bans, access.NeverBan))
+		if crowdsec {
+			cs := obj{"handle": []any{obj{"handler": "crowdsec"}}}
+			if len(access.NeverBan) > 0 {
+				cs["match"] = []any{obj{"not": []any{obj{"client_ip": obj{"ranges": access.NeverBan}}}}}
+			}
+			r = append(r, cs)
+		}
+		return r
 	}
 	httpRoutes = append(head("http"), httpRoutes...)
 	httpsRoutes = append(head("https"), httpsRoutes...)
@@ -193,6 +206,14 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 	}
 	if len(policies) > 0 {
 		cfg["apps"].(obj)["tls"] = obj{"automation": obj{"policies": policies}}
+	}
+	if crowdsec {
+		cfg["apps"].(obj)["crowdsec"] = obj{
+			"api_url":          access.CrowdSec.APIURL,
+			"api_key":          "{file." + CrowdSecKeyFile(s.SecretsDir) + "}",
+			"ticker_interval":  "15s",
+			"enable_streaming": true,
+		}
 	}
 	if hp.Settings.Enabled {
 		// Make sure the honeypot's internal-CA certificate exists even though
@@ -322,6 +343,14 @@ func hostRoute(h store.Host, access store.AccessState, s Settings) (obj, error) 
 	}
 	if len(headerHandlers) > 0 {
 		subroutes = append(subroutes, obj{"handle": headerHandlers})
+	}
+	if events, window, ok := access.EffectiveRateLimit(h); ok {
+		zone := obj{"key": "{http.request.remote.host}", "window": fmt.Sprintf("%ds", window), "max_events": events}
+		if len(access.NeverBan) > 0 {
+			// Never-block addresses aren't rate limited either.
+			zone["match"] = []any{obj{"not": []any{obj{"client_ip": obj{"ranges": access.NeverBan}}}}}
+		}
+		subroutes = append(subroutes, obj{"handle": []any{obj{"handler": "rate_limit", "rate_limits": obj{"cpm": zone}}}})
 	}
 	if h.AdvancedJSON != "" {
 		var adv []any

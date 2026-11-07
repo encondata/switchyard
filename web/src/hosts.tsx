@@ -96,6 +96,10 @@ function FolderForm({
     folder?.dns_provider_id ?? null,
   )
   const [providers, setProviders] = useState<DNSProvider[]>([])
+  const [rl, setRl] = useState({
+    events: folder?.rate_limit_events ?? 0,
+    window: folder?.rate_limit_window ?? 60,
+  })
   const [reqHeaders, setReqHeaders] = useState<HeaderRule[]>(
     folder?.request_headers ?? [],
   )
@@ -130,6 +134,8 @@ function FolderForm({
         dns_provider_id: dnsProvider,
         request_headers: reqHeaders,
         response_headers: respHeaders,
+        rate_limit_events: rl.events,
+        rate_limit_window: rl.window,
       })
       onDone(true)
     } catch (err) {
@@ -217,6 +223,30 @@ function FolderForm({
           error={fields.request_headers}
         />
       </fieldset>
+      <div className="actions">
+        <label>
+          Default rate limit: requests per IP{' '}
+          <span className="hint">(0 = none)</span>
+          <input
+            type="number"
+            min={0}
+            value={rl.events}
+            onChange={(e) => setRl({ ...rl, events: Number(e.target.value) })}
+          />
+        </label>
+        <label>
+          per (seconds)
+          <input
+            type="number"
+            min={1}
+            value={rl.window}
+            onChange={(e) => setRl({ ...rl, window: Number(e.target.value) })}
+          />
+        </label>
+        {fields.rate_limit && (
+          <span className="field-error">{fields.rate_limit}</span>
+        )}
+      </div>
       <label>
         Default DNS provider
         <select
@@ -1150,6 +1180,41 @@ export function HostEditor({
           </span>
         </fieldset>
       )}
+
+      <fieldset>
+        <legend>Rate limit</legend>
+        <div className="actions">
+          <label>
+            Requests per client IP{' '}
+            <span className="hint">(0 = folder default or none)</span>
+            <input
+              type="number"
+              min={0}
+              value={host.rate_limit_events}
+              onChange={(e) =>
+                set({ rate_limit_events: Number(e.target.value) })
+              }
+            />
+          </label>
+          <label>
+            per (seconds)
+            <input
+              type="number"
+              min={1}
+              max={3600}
+              value={host.rate_limit_window}
+              onChange={(e) =>
+                set({ rate_limit_window: Number(e.target.value) })
+              }
+            />
+          </label>
+        </div>
+        <FieldError msg={fields.rate_limit} />
+        <span className="hint">
+          Clients over the limit get 429 Too Many Requests. Never-block
+          addresses aren’t limited.
+        </span>
+      </fieldset>
 
       <details open={host.trap_exceptions.length > 0}>
         <summary>Honeypot exceptions</summary>

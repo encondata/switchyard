@@ -50,11 +50,100 @@ function Mini({
   )
 }
 
+function CrowdSecCard({ onChanged }: { onChanged: () => void }) {
+  const [c, setC] = useState<{
+    enabled: boolean
+    api_url: string
+    key_set: boolean
+  } | null>(null)
+  const [key, setKey] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  useEffect(() => {
+    api
+      .crowdsec()
+      .then(setC)
+      .catch(() => setC(null))
+  }, [])
+  if (!c) return null
+  return (
+    <section className="card">
+      <h1>CrowdSec (optional)</h1>
+      <p className="hint">
+        Also block addresses on CrowdSec’s community block lists. Needs a
+        CrowdSec Local API you run (e.g. the crowdsec container) and a bouncer
+        key from <code>cscli bouncers add cpm</code>. Checked after CPM’s own
+        bans; never-block addresses are skipped.
+      </p>
+      {err && <p className="error">{err}</p>}
+      {msg && <p className="success">{msg}</p>}
+      <form
+        className="folder-form"
+        onSubmit={(e) => {
+          e.preventDefault()
+          setErr(null)
+          api
+            .saveCrowdSec(c.enabled, c.api_url, key)
+            .then((r) => {
+              setC(r)
+              setKey('')
+              setMsg('Saved. Review and apply to send it to Caddy.')
+              onChanged()
+            })
+            .catch((x: unknown) =>
+              setErr(
+                x instanceof ApiError && Object.keys(x.fields).length
+                  ? Object.values(x.fields).join(' ')
+                  : message(x),
+              ),
+            )
+        }}
+      >
+        <label className="inline">
+          <input
+            type="checkbox"
+            checked={c.enabled}
+            onChange={(e) => setC({ ...c, enabled: e.target.checked })}
+          />
+          Use CrowdSec
+        </label>
+        <label>
+          Local API address
+          <input
+            className="mono"
+            placeholder="http://crowdsec:8080/"
+            value={c.api_url}
+            onChange={(e) => setC({ ...c, api_url: e.target.value })}
+          />
+        </label>
+        <label>
+          Bouncer key{' '}
+          {c.key_set && (
+            <span className="hint">(saved; leave empty to keep it)</span>
+          )}
+          <input
+            type="password"
+            autoComplete="off"
+            className="mono"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+          />
+        </label>
+        <div className="actions">
+          <button>Save</button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
 export function HoneypotPage({
   canEdit,
+  isAdmin = false,
   onChanged,
 }: {
   canEdit: boolean
+  isAdmin?: boolean
   onChanged: () => void
 }) {
   const [settings, setSettings] = useState<HoneypotSettings | null>(null)
@@ -488,6 +577,8 @@ export function HoneypotPage({
           </div>
         )}
       </section>
+
+      {isAdmin && <CrowdSecCard onChanged={onChanged} />}
 
       <section className="card">
         <div className="toolbar">

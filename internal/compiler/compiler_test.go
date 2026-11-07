@@ -401,3 +401,35 @@ func TestGoldenHoneypot(t *testing.T) {
 		_ = os.WriteFile(p, got, 0o600)
 	}
 }
+
+func TestRateLimitAndCrowdSec(t *testing.T) {
+	folder := int64(5)
+	access := store.AccessState{
+		Folders:  map[int64]store.Folder{folder: {ID: folder, Name: "API", RateLimitEvents: 100, RateLimitWindow: 60}},
+		Policies: map[int64]store.AccessPolicy{},
+		NeverBan: []string{"10.0.0.0/8"},
+		CrowdSec: store.CrowdSecSettings{Enabled: true, APIURL: "http://crowdsec:8080/", KeySet: true},
+	}
+	hosts := []store.Host{
+		normalized(store.Host{ID: 1, Type: store.Host404, Enabled: true, Domains: []string{"api.localhost"}, TLSMode: store.TLSOff, FolderID: &folder}),
+		normalized(store.Host{ID: 2, Type: store.Host404, Enabled: true, Domains: []string{"own.localhost"}, TLSMode: store.TLSOff,
+			RateLimitEvents: 5, RateLimitWindow: 10}),
+	}
+	st := settings
+	st.SecretsDir = "/run/cpm-secrets"
+	got, err := Compile(st, hosts, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "ratelimit_crowdsec.json")
+	if *update {
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, _ := os.ReadFile(path)
+	if !bytes.Equal(got, want) {
+		t.Errorf("config differs from %s; run with -update if intended.\n%s", path, got)
+	}
+}

@@ -1,0 +1,300 @@
+{
+  "admin": {
+    "config": {
+      "persist": false
+    },
+    "listen": "unix//run/caddy/admin.sock|0660"
+  },
+  "apps": {
+    "crowdsec": {
+      "api_key": "{file./run/cpm-secrets/crowdsec.key}",
+      "api_url": "http://crowdsec:8080/",
+      "enable_streaming": true,
+      "ticker_interval": "15s"
+    },
+    "http": {
+      "servers": {
+        "cpm_http": {
+          "listen": [
+            ":80"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_banlist_http",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_blocked",
+                  "value": "banned"
+                },
+                {
+                  "abort": true,
+                  "handler": "static_response"
+                }
+              ],
+              "match": [
+                {
+                  "client_ip": {
+                    "ranges": [
+                      "0.0.0.0/32"
+                    ]
+                  },
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "10.0.0.0/8"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "crowdsec"
+                }
+              ],
+              "match": [
+                {
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "10.0.0.0/8"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "@id": "cpm_host_1",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "rate_limit",
+                          "rate_limits": {
+                            "cpm": {
+                              "key": "{http.request.remote.host}",
+                              "match": [
+                                {
+                                  "not": [
+                                    {
+                                      "client_ip": {
+                                        "ranges": [
+                                          "10.0.0.0/8"
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              ],
+                              "max_events": 100,
+                              "window": "60s"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "body": "Not found.\n",
+                          "handler": "static_response",
+                          "headers": {
+                            "Content-Type": [
+                              "text/plain; charset=utf-8"
+                            ]
+                          },
+                          "status_code": "404"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "api.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_host_2",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "rate_limit",
+                          "rate_limits": {
+                            "cpm": {
+                              "key": "{http.request.remote.host}",
+                              "match": [
+                                {
+                                  "not": [
+                                    {
+                                      "client_ip": {
+                                        "ranges": [
+                                          "10.0.0.0/8"
+                                        ]
+                                      }
+                                    }
+                                  ]
+                                }
+                              ],
+                              "max_events": 5,
+                              "window": "10s"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "body": "Not found.\n",
+                          "handler": "static_response",
+                          "headers": {
+                            "Content-Type": [
+                              "text/plain; charset=utf-8"
+                            ]
+                          },
+                          "status_code": "404"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "own.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_not_configured_http",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        },
+        "cpm_https": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_banlist_https",
+              "handle": [
+                {
+                  "early": true,
+                  "handler": "log_append",
+                  "key": "cpm_blocked",
+                  "value": "banned"
+                },
+                {
+                  "abort": true,
+                  "handler": "static_response"
+                }
+              ],
+              "match": [
+                {
+                  "client_ip": {
+                    "ranges": [
+                      "0.0.0.0/32"
+                    ]
+                  },
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "10.0.0.0/8"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "crowdsec"
+                }
+              ],
+              "match": [
+                {
+                  "not": [
+                    {
+                      "client_ip": {
+                        "ranges": [
+                          "10.0.0.0/8"
+                        ]
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "@id": "cpm_not_configured_https",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "pki": {
+      "certificate_authorities": {
+        "local": {
+          "install_trust": false
+        }
+      }
+    }
+  }
+}
