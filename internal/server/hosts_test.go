@@ -123,7 +123,10 @@ func TestFoldersPoliciesAPI(t *testing.T) {
 		t.Fatalf("create policy = %d %v", code, p)
 	}
 	pid := itoa(int(p["id"].(float64)))
-	if code, body := c.do("POST", "/api/policies", `{"name":"x","mode":"deny","rules":["US"]}`); code != 400 || body["fields"] == nil {
+	if code, body := c.do("POST", "/api/policies", `{"name":"x","mode":"deny","rules":["ZZ"]}`); code != 400 || body["fields"] == nil {
+		t.Fatalf("unknown country = %d %v", code, body)
+	}
+	if code, body := c.do("POST", "/api/policies", `{"name":"geo","mode":"deny","rules":["us"]}`); code != http.StatusCreated {
 		t.Fatalf("country rule = %d %v", code, body)
 	}
 

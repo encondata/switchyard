@@ -16,6 +16,7 @@ import (
 
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
+	"github.com/encondata/caddyproxymanager/internal/geoip"
 	"github.com/encondata/caddyproxymanager/internal/monitor"
 	"github.com/encondata/caddyproxymanager/internal/ratelimit"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
@@ -47,6 +48,8 @@ type Options struct {
 	DataDir string
 	// Restart stops the server so it restarts (after a restore).
 	Restart func()
+	// GeoIP is the country database (for its age and lookups).
+	GeoIP *geoip.DB
 }
 
 type srv struct {
@@ -65,6 +68,7 @@ type srv struct {
 	ipFailures   *ratelimit.Failures
 	userFailures *ratelimit.Failures
 	imports      pendingImports
+	geo          *geoip.DB
 }
 
 // New returns the root HTTP handler.
@@ -84,6 +88,7 @@ func New(opts Options) http.Handler {
 		monitor:       opts.Monitor,
 		dataDir:       opts.DataDir,
 		restart:       opts.Restart,
+		geo:           opts.GeoIP,
 		ipFailures:    ratelimit.New(10, 15*time.Minute),
 		userFailures:  ratelimit.New(5, 15*time.Minute),
 	}
@@ -141,6 +146,9 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("POST /api/never-ban", s.requireEditor(s.handleAddNeverBan))
 		mux.HandleFunc("DELETE /api/never-ban", s.requireEditor(s.handleDeleteNeverBan))
 		mux.HandleFunc("GET /api/whoami", s.requireUser(false, s.handleWhoAmI))
+		mux.HandleFunc("GET /api/countries", s.requireUser(false, func(w http.ResponseWriter, _ *http.Request) {
+			writeJSON(w, http.StatusOK, geoip.Countries())
+		}))
 		mux.HandleFunc("GET /api/dns-providers", s.requireUser(false, s.handleListDNSProviders))
 		mux.HandleFunc("POST /api/dns-providers", s.requireAdmin(s.handleSaveDNSProvider))
 		mux.HandleFunc("PUT /api/dns-providers/{id}", s.requireAdmin(s.handleSaveDNSProvider))

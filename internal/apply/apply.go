@@ -20,6 +20,7 @@ import (
 	"github.com/pmezard/go-difflib/difflib"
 
 	"github.com/encondata/caddyproxymanager/internal/compiler"
+	"github.com/encondata/caddyproxymanager/internal/geoip"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
@@ -42,6 +43,9 @@ type Service struct {
 	// for Caddy (see compiler.Settings.SecretsDir).
 	Box        *secrets.Box
 	SecretsDir string
+	// GeoIP is the country database as CPM sees it; country rules compile
+	// only when it exists.
+	GeoIP *geoip.DB
 
 	mu sync.Mutex
 }
@@ -71,7 +75,9 @@ func (s *Service) Build(ctx context.Context) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return compiler.Compile(s.Settings, hosts, access)
+	settings := s.Settings
+	settings.GeoIPReady = s.GeoIP.Available()
+	return compiler.Compile(settings, hosts, access)
 }
 
 // Preview compares the database's config with Caddy's running config.

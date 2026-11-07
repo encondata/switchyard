@@ -3,7 +3,7 @@
 package ratelimit
 
 import (
-	"hash/fnv"
+	"hash/maphash"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,11 +26,20 @@ const evictScan = 64
 // new key at once.
 const overflowShards = 256
 
+// overflowSeed keys the shard hash, so attackers can't pick which shard
+// their keys land in.
+var overflowSeed = maphash.MakeSeed()
+
 func overflowKey(key string) string {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	return "\x00overflow:" + strconv.Itoa(int(h.Sum32()%overflowShards))
+	return "\x00overflow:" + strconv.Itoa(int(maphash.String(overflowSeed, key)%overflowShards))
 }
+
+// overflowTotalKey caps all overflow attempts together, so spreading keys
+// over shards can't multiply an attacker's budget without bound.
+const overflowTotalKey = "\x00overflow:total"
+
+// overflowTotalFactor sets the total overflow cap relative to Max.
+const overflowTotalFactor = 200
 
 func isOverflow(k string) bool { return strings.HasPrefix(k, "\x00overflow:") }
 
@@ -121,7 +130,12 @@ func (f *Failures) Attempt(key string) (bool, time.Duration) {
 		if len(over) >= f.Max*overflowFactor {
 			return false, f.Window - now.Sub(over[0])
 		}
+		total := f.prune(overflowTotalKey, now)
+		if len(total) >= f.Max*overflowTotalFactor {
+			return false, f.Window - now.Sub(total[0])
+		}
 		f.hits[ok] = append(over, now)
+		f.hits[overflowTotalKey] = append(total, now)
 	}
 	return true, 0
 }

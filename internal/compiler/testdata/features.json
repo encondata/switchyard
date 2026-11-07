@@ -22,6 +22,11 @@
                     {
                       "handle": [
                         {
+                          "handler": "log_append",
+                          "key": "cpm_blocked",
+                          "value": "deny: Deny"
+                        },
+                        {
                           "body": "Access denied.\n",
                           "handler": "static_response",
                           "headers": {

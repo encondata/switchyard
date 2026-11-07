@@ -7,7 +7,7 @@
 github.com/caddy-dns/cloudflare@v0.2.4
 
 # Phase 2: country matcher (CPM-21)
-# github.com/porech/caddy-maxmind-geolocation@vX.Y.Z
+github.com/porech/caddy-maxmind-geolocation@v1.0.3
 
 # Phase 2, optional: per-host rate limits (CPM-26)
 # github.com/mholt/caddy-ratelimit@vX.Y.Z

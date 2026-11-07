@@ -1,5 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { api, ApiError, message, type AccessPolicy, type NeverBan } from './api'
+import {
+  api,
+  ApiError,
+  message,
+  type AccessPolicy,
+  type Country,
+  type NeverBan,
+} from './api'
 import { PolicyBadge } from './hosts'
 
 type Draft = Pick<
@@ -25,6 +32,13 @@ function PolicyForm({
 }) {
   const [p, setP] = useState<Draft>(initial)
   const [rules, setRules] = useState(initial.rules.join('\n'))
+  const [countries, setCountries] = useState<Country[]>([])
+  useEffect(() => {
+    api
+      .countries()
+      .then(setCountries)
+      .catch(() => setCountries([]))
+  }, [])
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
 
@@ -82,17 +96,41 @@ function PolicyForm({
         </label>
       </fieldset>
       <label>
-        Addresses{' '}
-        <span className="hint">(IPs or CIDR ranges, one per line)</span>
+        Addresses and countries{' '}
+        <span className="hint">
+          (IPs, CIDR ranges or ISO country codes like US, one per line)
+        </span>
         <textarea
           rows={5}
           required
           className="mono"
-          placeholder={'192.168.1.0/24\n10.0.0.5\n2001:db8::/32'}
+          placeholder={'192.168.1.0/24\n10.0.0.5\n2001:db8::/32\nUS'}
           value={rules}
           onChange={(e) => setRules(e.target.value)}
         />
         {fields.rules && <span className="field-error">{fields.rules}</span>}
+      </label>
+      <label>
+        Add a country
+        <select
+          value=""
+          onChange={(e) => {
+            const code = e.target.value
+            if (code && !rules.split(/\s+/).includes(code))
+              setRules(rules.trim() ? `${rules.trim()}\n${code}` : code)
+          }}
+        >
+          <option value="">Choose…</option>
+          {countries.map((c) => (
+            <option key={c.code} value={c.code}>
+              {c.name} ({c.code})
+            </option>
+          ))}
+        </select>
+        <span className="hint">
+          Country rules need the GeoLite2 database (see Health). Countries come
+          from the visitor’s IP address, so VPNs can hide the real one.
+        </span>
       </label>
       <label>
         Blocked visitors get

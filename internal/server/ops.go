@@ -40,12 +40,17 @@ func (s *srv) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if info, err := os.Stat(filepath.Join(s.dataDir, "cpm.db")); err == nil {
 		dbBytes = info.Size()
 	}
+	geo := map[string]any{"installed": false}
+	if mt, ok := s.geo.ModTime(); ok {
+		geo = map[string]any{"installed": true, "updated_at": mt.UTC(), "age_days": int(time.Since(mt).Hours() / 24)}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":       s.version,
 		"monitor":       snap,
 		"alerts":        alerts,
 		"db_bytes":      dbBytes,
 		"secrets_ready": s.box.Ready(),
+		"geoip":         geo,
 	})
 }
 

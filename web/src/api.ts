@@ -259,6 +259,8 @@ export type CertRow = {
   last_error?: { message: string; at: string }
 }
 
+export type Country = { code: string; name: string }
+
 export type Health = {
   version: string
   monitor: {
@@ -272,6 +274,7 @@ export type Health = {
   alerts: Alert[]
   db_bytes: number
   secrets_ready: boolean
+  geoip: { installed: boolean; updated_at?: string; age_days?: number }
 }
 
 export type ImportPlan = {
@@ -470,6 +473,7 @@ export const api = {
   deleteNeverBan: (cidr: string) =>
     request<void>('DELETE', `/api/never-ban?cidr=${encodeURIComponent(cidr)}`),
   whoami: () => request<{ ip: string }>('GET', '/api/whoami'),
+  countries: () => request<Country[]>('GET', '/api/countries'),
 
   alerts: () => request<Alert[]>('GET', '/api/alerts'),
   health: () => request<Health>('GET', '/api/health/details'),

@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/encondata/caddyproxymanager/internal/store"
@@ -303,5 +304,38 @@ func TestGoldenFeatures(t *testing.T) {
 	}
 	if !bytes.Equal(got, want) {
 		t.Errorf("features config differs from %s; run with -update if intended.\n%s", path, got)
+	}
+}
+
+func TestCountryRules(t *testing.T) {
+	access := store.AccessState{
+		Folders: map[int64]store.Folder{},
+		Policies: map[int64]store.AccessPolicy{
+			1: {ID: 1, Name: "Home", Mode: store.PolicyAllowOnly, Response: store.Respond403, Rules: []string{"US", "CA", "10.0.0.0/8"}},
+			2: {ID: 2, Name: "No RU", Mode: store.PolicyDeny, Response: store.RespondAbort, Rules: []string{"RU"}},
+		},
+	}
+	hosts := []store.Host{normalized(store.Host{
+		ID: 1, Type: store.Host404, Enabled: true, Domains: []string{"geo.localhost"}, TLSMode: store.TLSOff, PolicyIDs: []int64{1, 2},
+	})}
+	if _, err := Compile(settings, hosts, access); err == nil || !strings.Contains(err.Error(), "GeoLite2") {
+		t.Fatalf("country rules without a database err = %v", err)
+	}
+	st := settings
+	st.GeoIPDB, st.GeoIPReady = "/usr/share/GeoIP/GeoLite2-Country.mmdb", true
+	got, err := Compile(st, hosts, access)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "geo.json")
+	if *update {
+		if err := os.WriteFile(path, got, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, _ := os.ReadFile(path)
+	if !bytes.Equal(got, want) {
+		t.Errorf("geo config differs from %s; run with -update if intended.\n%s", path, got)
 	}
 }

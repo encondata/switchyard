@@ -17,6 +17,7 @@ import (
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
 	"github.com/encondata/caddyproxymanager/internal/compiler"
+	"github.com/encondata/caddyproxymanager/internal/geoip"
 	"github.com/encondata/caddyproxymanager/internal/monitor"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/server"
@@ -99,6 +100,7 @@ func main() {
 		logger.Warn("CPM_SECRET_KEY is not set; DNS provider tokens can't be stored")
 	}
 	secretsDir := envOr("CPM_SECRETS_DIR", "/run/cpm-secrets")
+	geo := &geoip.DB{Path: envOr("CPM_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb")}
 	applier := &apply.Service{
 		Store: st,
 		Caddy: caddyAPI,
@@ -108,7 +110,9 @@ func main() {
 			ACMECA:      os.Getenv("CPM_ACME_CA"),
 			ACMEEmail:   os.Getenv("CPM_ACME_EMAIL"),
 			TLSLogFile:  envOr("CPM_CADDY_TLS_LOG", "/var/log/caddy/tls.log"),
+			GeoIPDB:     envOr("CPM_CADDY_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb"),
 		},
+		GeoIP:      geo,
 		ConfigFile: os.Getenv("CPM_CADDY_CONFIG_FILE"),
 		Box:        box,
 		SecretsDir: secretsDir,
@@ -136,7 +140,7 @@ func main() {
 			Version: version, UI: web.Dist(), Logger: logger,
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
 			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"), Box: box,
-			Monitor: mon, DataDir: *dataDir, Restart: stop,
+			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

@@ -27,6 +27,7 @@ services:
       - caddy-data:/data
       - caddy-config:/config
       - caddy-logs:/var/log/caddy
+      - geoip:/usr/share/GeoIP:ro
     healthcheck:
       # Healthy once the admin socket is up (unknown hosts answer 404, which
       # wget would count as a failure).
@@ -67,6 +68,22 @@ services:
       - caddy-admin:/run/caddy
       - caddy-data:/caddy-data:ro
       - caddy-logs:/var/log/caddy:ro
+      - geoip:/usr/share/GeoIP:ro
+
+  # Keeps the GeoLite2-Country database (country rules, dashboard) up to
+  # date, weekly. Needs a free MaxMind account: put GEOIPUPDATE_ACCOUNT_ID
+  # and GEOIPUPDATE_LICENSE_KEY in .env and start with `--profile geoip`.
+  geoipupdate:
+    image: ghcr.io/maxmind/geoipupdate:v8.0.0@sha256:51e70dd6f16cd3e4d845ac02d09940b10772a75b9d741427d235a78570923c1d
+    profiles: [geoip]
+    restart: unless-stopped
+    environment:
+      GEOIPUPDATE_ACCOUNT_ID: ${GEOIPUPDATE_ACCOUNT_ID:-}
+      GEOIPUPDATE_LICENSE_KEY: ${GEOIPUPDATE_LICENSE_KEY:-}
+      GEOIPUPDATE_EDITION_IDS: GeoLite2-Country
+      GEOIPUPDATE_FREQUENCY: "168"
+    volumes:
+      - geoip:/usr/share/GeoIP
 
   # Test backend for trying CPM out: proxy a host to whoami:80. It echoes
   # back the request it received. Only runs with `--profile demo`.
@@ -76,6 +93,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  geoip:
   # DNS provider tokens as files, written by CPM and read by Caddy through
   # {file.…} placeholders. Encrypted copies live in CPM's database.
   cpm-secrets:

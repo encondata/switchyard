@@ -43,6 +43,10 @@ type Settings struct {
 	ACMECA string
 	// ACMEEmail is the contact address for ACME accounts (optional).
 	ACMEEmail string
+	// GeoIPDB is the GeoLite2-Country database path as Caddy sees it;
+	// GeoIPReady says whether it exists. Country rules need both.
+	GeoIPDB    string
+	GeoIPReady bool
 	// TLSLogFile, if set, makes Caddy also write its certificate
 	// management logs there as JSON, so CPM can show why a certificate
 	// failed (spec F2).
@@ -89,7 +93,7 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 			}
 			dnsSubjects[pid] = append(dnsSubjects[pid], h.Domains...)
 		}
-		route, err := hostRoute(h, access)
+		route, err := hostRoute(h, access, s)
 		if err != nil {
 			return nil, fmt.Errorf("compiler: host %d: %w", h.ID, err)
 		}
@@ -101,7 +105,7 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 		if h.ForceHTTPS {
 			httpRoutes = append(httpRoutes, redirectToHTTPSRoute(h))
 		} else {
-			plain, _ := hostRoute(h, access) // same handlers, also on :80
+			plain, _ := hostRoute(h, access, s) // same handlers, also on :80
 			plain["@id"] = fmt.Sprintf("cpm_host_%d_http", h.ID)
 			httpRoutes = append(httpRoutes, plain)
 		}
@@ -203,7 +207,7 @@ func acmeIssuer(s Settings) obj {
 	return iss
 }
 
-func hostRoute(h store.Host, access store.AccessState) (obj, error) {
+func hostRoute(h store.Host, access store.AccessState, s Settings) (obj, error) {
 	// Header handlers go in their own route before the advanced snippet, so
 	// they also cover responses the snippet produces.
 	var headerHandlers, handlers []any
@@ -255,7 +259,10 @@ func hostRoute(h store.Host, access store.AccessState) (obj, error) {
 	}
 	// Access rules always come first, so the advanced snippet can't bypass
 	// them; then the snippet; then the host's own handlers.
-	subroutes := accessRoutes(h, access)
+	subroutes, err := accessRoutes(h, access, s)
+	if err != nil {
+		return nil, err
+	}
 	if len(headerHandlers) > 0 {
 		subroutes = append(subroutes, obj{"handle": headerHandlers})
 	}
@@ -413,37 +420,90 @@ func trimSlash(s string) string {
 //
 // Evaluation order (spec F4): never-ban → allow; deny match → block;
 // allow-only rules exist and none match → block; otherwise allow. Bans
-// (step 2) arrive with the honeypot.
-func accessRoutes(h store.Host, access store.AccessState) []any {
+// (step 2) come from the honeypot. Rules are IPs/CIDRs (client_ip matcher)
+// or ISO country codes (maxmind_geolocation matcher).
+func accessRoutes(h store.Host, access store.AccessState, s Settings) ([]any, error) {
 	var never []any
 	if len(access.NeverBan) > 0 {
 		never = []any{obj{"client_ip": obj{"ranges": access.NeverBan}}}
 	}
+	countryMatcher := func(codes []string) (obj, error) {
+		if s.GeoIPDB == "" || !s.GeoIPReady {
+			return nil, fmt.Errorf("host %d (%s) has country rules, but the GeoLite2 database isn't installed (see the GeoIP section of the README)",
+				h.ID, strings.Join(h.Domains, ", "))
+		}
+		return obj{"maxmind_geolocation": obj{"db_path": s.GeoIPDB, "allow_countries": codes}}, nil
+	}
 	var routes []any
-	var allow []string
+	var allowIPs, allowCountries []string
 	allowResponse := store.Respond403
 	for _, p := range access.EffectivePolicies(h) {
+		ips, countries := splitRules(p.Rules)
 		switch p.Mode {
 		case store.PolicyDeny:
-			m := obj{"client_ip": obj{"ranges": p.Rules}}
-			if never != nil {
-				m["not"] = never
+			var sets []any
+			if len(ips) > 0 {
+				sets = append(sets, obj{"client_ip": obj{"ranges": ips}})
 			}
-			routes = append(routes, obj{"match": []any{m}, "handle": []any{blockHandler(p.Response)}})
+			if len(countries) > 0 {
+				m, err := countryMatcher(countries)
+				if err != nil {
+					return nil, err
+				}
+				sets = append(sets, m)
+			}
+			for _, set := range sets {
+				if never != nil {
+					set.(obj)["not"] = never
+				}
+			}
+			routes = append(routes, obj{"match": sets, "handle": blockHandlers(p.Response, "deny: "+p.Name)})
 		case store.PolicyAllowOnly:
-			allow = append(allow, p.Rules...)
+			allowIPs = append(allowIPs, ips...)
+			allowCountries = append(allowCountries, countries...)
 			if p.Response == store.RespondAbort {
 				allowResponse = store.RespondAbort // the stricter response wins
 			}
 		}
 	}
-	if len(allow) > 0 {
-		// Block when the client is in neither the allowed ranges nor the
-		// never-ban list: not(allowed OR never-ban).
-		sets := append([]any{obj{"client_ip": obj{"ranges": dedupe(allow)}}}, never...)
-		routes = append(routes, obj{"match": []any{obj{"not": sets}}, "handle": []any{blockHandler(allowResponse)}})
+	if len(allowIPs) > 0 || len(allowCountries) > 0 {
+		// Block when the client matches none of: allowed ranges, allowed
+		// countries, never-ban list. not(A OR B OR C).
+		var sets []any
+		if len(allowIPs) > 0 {
+			sets = append(sets, obj{"client_ip": obj{"ranges": dedupe(allowIPs)}})
+		}
+		if len(allowCountries) > 0 {
+			m, err := countryMatcher(dedupe(allowCountries))
+			if err != nil {
+				return nil, err
+			}
+			sets = append(sets, m)
+		}
+		sets = append(sets, never...)
+		routes = append(routes, obj{"match": []any{obj{"not": sets}}, "handle": blockHandlers(allowResponse, "not allowed")})
 	}
-	return routes
+	return routes, nil
+}
+
+func splitRules(rules []string) (ips, countries []string) {
+	for _, r := range rules {
+		if store.IsCountryRule(r) {
+			countries = append(countries, r)
+		} else {
+			ips = append(ips, r)
+		}
+	}
+	return ips, countries
+}
+
+// blockHandlers tags the access log entry with why the request was
+// blocked (read by the log ingester), then responds.
+func blockHandlers(response, reason string) []any {
+	return []any{
+		obj{"handler": "log_append", "key": "cpm_blocked", "value": reason},
+		blockHandler(response),
+	}
 }
 
 func blockHandler(response string) obj {

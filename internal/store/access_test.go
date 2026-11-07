@@ -32,13 +32,16 @@ func TestParseRule(t *testing.T) {
 			t.Errorf("ParseRule(%q) = %q, %v; want %q", in, got, err, want)
 		}
 	}
-	for _, bad := range []string{"", "::ffff:0:0/80", "10.0.0.256", "10.0.0.0/33", "example.com", "US", "10.0.0.1-10.0.0.5"} {
+	if c, err := ParseRule(" de "); err != nil || c != "DE" {
+		t.Errorf("country code = %q, %v", c, err)
+	}
+	for _, bad := range []string{"", "::ffff:0:0/80", "10.0.0.256", "10.0.0.0/33", "example.com", "XX", "10.0.0.1-10.0.0.5"} {
 		if _, err := ParseRule(bad); err == nil {
 			t.Errorf("ParseRule(%q) accepted", bad)
 		}
 	}
-	if _, err := ParseRule("DE"); err == nil || !strings.Contains(err.Error(), "country") {
-		t.Errorf("country code error should mention countries: %v", err)
+	if _, err := ParseRule("ZZ"); err == nil || !strings.Contains(err.Error(), "country") {
+		t.Errorf("unknown country code error should mention countries: %v", err)
 	}
 }
 

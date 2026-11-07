@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/encondata/caddyproxymanager/internal/geoip"
 )
 
 // ConflictError means an action can't be done in the current state, for
@@ -65,12 +67,16 @@ type NeverBan struct {
 
 var countryRE = regexp.MustCompile(`^[A-Za-z]{2}$`)
 
-// ParseRule turns an IP or CIDR into its canonical form: a bare address for
-// single IPs, a masked prefix for ranges ("10.1.2.3/8" becomes "10.0.0.0/8").
+// ParseRule turns a rule into its canonical form: a bare address for single
+// IPs, a masked prefix for ranges ("10.1.2.3/8" becomes "10.0.0.0/8"), or an
+// upper-case ISO country code ("de" becomes "DE").
 func ParseRule(raw string) (string, error) {
 	r := strings.TrimSpace(raw)
 	if countryRE.MatchString(r) {
-		return "", fmt.Errorf("%q looks like a country code; country rules arrive with GeoIP support (phase 2)", r)
+		if !geoip.ValidCountry(r) {
+			return "", fmt.Errorf("%q isn't an ISO country code", r)
+		}
+		return strings.ToUpper(r), nil
 	}
 	if strings.Contains(r, "/") {
 		p, err := netip.ParsePrefix(r)
@@ -517,9 +523,15 @@ func (s *Store) ListNeverBan(ctx context.Context) ([]NeverBan, error) {
 	return out, rows.Err()
 }
 
+// IsCountryRule reports whether a canonical rule is a country code.
+func IsCountryRule(r string) bool { return countryRE.MatchString(r) }
+
 // AddNeverBan adds an IP or CIDR to the never-block list.
 func (s *Store) AddNeverBan(ctx context.Context, cidr, note, username string) (NeverBan, error) {
 	c, err := ParseRule(cidr)
+	if err == nil && IsCountryRule(c) {
+		err = fmt.Errorf("the never-block list takes IP addresses and ranges, not countries")
+	}
 	if err != nil {
 		return NeverBan{}, ValidationError{"cidr": err.Error()}
 	}

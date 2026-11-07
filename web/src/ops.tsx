@@ -254,7 +254,20 @@ export function HealthPage({ isAdmin }: { isAdmin: boolean }) {
               )}
             </dd>
             <dt>GeoIP database</dt>
-            <dd className="hint">Not configured (country rules, phase 2)</dd>
+            <dd>
+              {h.geoip.installed ? (
+                <span className={(h.geoip.age_days ?? 0) > 14 ? 'bad' : 'ok'}>
+                  Updated {h.geoip.age_days} day(s) ago
+                  {(h.geoip.age_days ?? 0) > 14 &&
+                    ' — check the geoipupdate container'}
+                </span>
+              ) : (
+                <span className="hint">
+                  Not installed. Country rules and dashboard countries need a
+                  free MaxMind key (see .env.example).
+                </span>
+              )}
+            </dd>
             <dt>Last check</dt>
             <dd>
               {m.checked_at && !m.checked_at.startsWith('0001')
