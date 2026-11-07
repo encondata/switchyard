@@ -274,6 +274,40 @@ export type Health = {
   secrets_ready: boolean
 }
 
+export type ImportPlan = {
+  hosts: {
+    source: string
+    host: Host
+    policies: string[]
+    warnings: string[]
+    skip?: string
+  }[]
+  policies: { source: string; policy: AccessPolicy }[]
+  streams: {
+    id: number
+    incoming_port: number
+    forward: string
+    protocols: string
+    enabled: boolean
+  }[]
+  warnings: string[]
+}
+
+export type ImportResult = {
+  folder_id: number
+  hosts_created: number
+  policies_created: number
+  skipped: string[]
+}
+
+export type MySQLConfig = {
+  host: string
+  port: number
+  user: string
+  password: string
+  database: string
+}
+
 export class ApiError extends Error {
   status: number
   code: string
@@ -442,6 +476,35 @@ export const api = {
   checkNow: () => request<Health>('POST', '/api/health/check'),
   certificates: () => request<CertRow[]>('GET', '/api/certificates'),
   retryCerts: () => request<void>('POST', '/api/certificates/retry'),
+  importPreviewFile: async (file: File) => {
+    const res = await fetch('/api/import/npm/preview', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/vnd.sqlite3' },
+      body: file,
+    })
+    const data = (await res.json().catch(() => ({}))) as {
+      plan_id?: string
+      plan?: ImportPlan
+      error?: string
+      message?: string
+    }
+    if (!res.ok)
+      throw new ApiError(
+        res.status,
+        data.error ?? 'error',
+        data.message ?? `HTTP ${res.status}`,
+      )
+    return data as { plan_id: string; plan: ImportPlan }
+  },
+  importPreviewMySQL: (mysql: MySQLConfig) =>
+    request<{ plan_id: string; plan: ImportPlan }>(
+      'POST',
+      '/api/import/npm/preview',
+      { mysql },
+    ),
+  importRun: (plan_id: string) =>
+    request<ImportResult>('POST', '/api/import/npm/run', { plan_id }),
   restore: async (file: File) => {
     const res = await fetch('/api/restore', {
       method: 'POST',

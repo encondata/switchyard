@@ -49,3 +49,13 @@ func TestAttempt(t *testing.T) {
 		t.Fatal("undo didn't free a slot")
 	}
 }
+
+func TestKeyCap(t *testing.T) {
+	f := New(5, time.Minute)
+	for i := 0; i < maxKeys+50; i++ {
+		f.Attempt(string(rune('a'+i%26)) + time.Duration(i).String())
+	}
+	if len(f.hits) > maxKeys {
+		t.Fatalf("keys = %d, want at most %d", len(f.hits), maxKeys)
+	}
+}

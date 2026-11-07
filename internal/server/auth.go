@@ -151,7 +151,11 @@ func (s *srv) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func userLimitKey(username string) string {
-	return "user:" + strings.ToLower(strings.TrimSpace(username))
+	u := strings.ToLower(strings.TrimSpace(username))
+	if len(u) > 64 { // usernames are at most 64 characters
+		u = u[:64]
+	}
+	return "user:" + u
 }
 
 func (s *srv) limiter(key string) *ratelimit.Failures {

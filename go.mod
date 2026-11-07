@@ -3,12 +3,14 @@ module github.com/encondata/caddyproxymanager
 go 1.27.3
 
 require (
+	github.com/go-sql-driver/mysql v1.10.1
 	github.com/pmezard/go-difflib v1.0.0
 	golang.org/x/crypto v0.58.0
 	modernc.org/sqlite v1.62.0
 )
 
 require (
+	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

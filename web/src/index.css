@@ -689,3 +689,8 @@ details summary {
 .main-nav a {
   white-space: nowrap;
 }
+
+.warn-list {
+  margin: 0;
+  padding-left: 1.6rem;
+}

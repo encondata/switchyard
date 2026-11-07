@@ -261,9 +261,11 @@ function FolderForm({
 
 export function HostList({
   canEdit,
+  isAdmin = false,
   onChanged,
 }: {
   canEdit: boolean
+  isAdmin?: boolean
   onChanged: () => void
 }) {
   const [hosts, setHosts] = useState<HostView[] | null>(null)
@@ -433,6 +435,11 @@ export function HostList({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
+              {isAdmin && (
+                <a className="button secondary" href="#/import">
+                  Import from NPM
+                </a>
+              )}
               {canEdit && (
                 <a
                   className="button"

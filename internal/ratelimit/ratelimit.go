@@ -54,14 +54,33 @@ func (f *Failures) Fail(key string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	now := f.now()
-	f.prune(key, now)
-	f.hits[key] = append(f.hits[key], now)
-	if len(f.hits) > 100_000 { // bound memory under a flood
+	f.record(key, f.prune(key, now), now)
+}
+
+// maxKeys bounds memory when many different keys (IPs, usernames) fail.
+const maxKeys = 100_000
+
+// maxKeyLen bounds the memory one key can use.
+const maxKeyLen = 128
+
+// record adds a hit. Call with f.mu held and hits = f.prune(key, now).
+func (f *Failures) record(key string, hits []time.Time, now time.Time) {
+	if len(key) > maxKeyLen {
+		key = key[:maxKeyLen]
+	}
+	if _, exists := f.hits[key]; !exists && len(f.hits) >= maxKeys {
+		// Sweep expired keys first; if still full, drop an arbitrary one.
 		for k := range f.hits {
+			f.prune(k, now)
+		}
+		for k := range f.hits {
+			if len(f.hits) < maxKeys {
+				break
+			}
 			delete(f.hits, k)
-			break
 		}
 	}
+	f.hits[key] = append(hits, now)
 }
 
 // Attempt atomically checks key and, if it isn't blocked, counts this
@@ -75,7 +94,7 @@ func (f *Failures) Attempt(key string) (bool, time.Duration) {
 	if len(hits) >= f.Max {
 		return false, f.Window - now.Sub(hits[0])
 	}
-	f.hits[key] = append(hits, now)
+	f.record(key, hits, now)
 	return true, 0
 }
 

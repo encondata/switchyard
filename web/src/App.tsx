@@ -8,6 +8,7 @@ import { Certificates, HealthPage } from './ops'
 import { HostEditor, HostList } from './hosts'
 import { AccountPage, EnrollRequired } from './account'
 import { AuditPage, UsersPage } from './users'
+import { ImportPage } from './importer'
 
 // Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
 function useRoute(): string {
@@ -113,6 +114,8 @@ function App() {
   else if (route === '/users' && user.role === 'admin')
     body = <UsersPage me={user} />
   else if (route === '/audit' && user.role === 'admin') body = <AuditPage />
+  else if (route === '/import' && user.role === 'admin')
+    body = <ImportPage onImported={refreshPending} />
   else if (route.startsWith('/hosts/new')) {
     const q = new URLSearchParams(route.split('?')[1] ?? '')
     const folder = q.get('folder')
@@ -149,7 +152,14 @@ function App() {
     )
   else if (route === '/access')
     body = <AccessPage canEdit={canEdit} onChanged={refreshPending} />
-  else body = <HostList canEdit={canEdit} onChanged={refreshPending} />
+  else
+    body = (
+      <HostList
+        canEdit={canEdit}
+        isAdmin={user.role === 'admin'}
+        onChanged={refreshPending}
+      />
+    )
 
   const nav = [
     ['/hosts', 'Hosts'],

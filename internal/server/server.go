@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"io/fs"
 	"log/slog"
@@ -63,6 +64,7 @@ type srv struct {
 	// Failed sign-ins: 10 per IP and 5 per username in 15 minutes.
 	ipFailures   *ratelimit.Failures
 	userFailures *ratelimit.Failures
+	imports      pendingImports
 }
 
 // New returns the root HTTP handler.
@@ -151,6 +153,8 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("POST /api/health/check", s.requireUser(false, s.handleCheckNow))
 		mux.HandleFunc("GET /api/backup", s.requireAdmin(s.handleBackup))
 		mux.HandleFunc("POST /api/restore", s.requireAdmin(s.handleRestore))
+		mux.HandleFunc("POST /api/import/npm/preview", s.requireAdmin(s.handleImportPreview))
+		mux.HandleFunc("POST /api/import/npm/run", s.requireAdmin(s.handleImportRun))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")
@@ -276,3 +280,5 @@ func clientIP(r *http.Request) string {
 	}
 	return host
 }
+
+var randRead = rand.Read
