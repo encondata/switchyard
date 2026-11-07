@@ -3,11 +3,14 @@
 package caddyadmin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -35,6 +38,43 @@ func New(socket string) *Client {
 
 // Socket returns the socket path the client uses.
 func (c *Client) Socket() string { return c.socket }
+
+// Load replaces Caddy's whole config (POST /load). If Caddy rejects the
+// config it keeps running the old one and the returned error carries
+// Caddy's message.
+func (c *Client) Load(ctx context.Context, config []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/load", bytes.NewReader(config))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("caddy admin: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode != http.StatusOK {
+		var e struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(body, &e) == nil && e.Error != "" {
+			return &LoadError{Status: resp.StatusCode, Message: e.Error}
+		}
+		return &LoadError{Status: resp.StatusCode, Message: strings.TrimSpace(string(body))}
+	}
+	return nil
+}
+
+// LoadError is Caddy rejecting a config.
+type LoadError struct {
+	Status  int
+	Message string
+}
+
+func (e *LoadError) Error() string {
+	return fmt.Sprintf("Caddy rejected the config (HTTP %d): %s", e.Status, e.Message)
+}
 
 // Config returns Caddy's running config as raw JSON (GET /config/).
 func (c *Client) Config(ctx context.Context) ([]byte, error) {

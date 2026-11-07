@@ -1,0 +1,172 @@
+{
+  "admin": {
+    "config": {
+      "persist": false
+    },
+    "listen": "unix//run/caddy/admin.sock|0660"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "cpm_http": {
+          "listen": [
+            ":80"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_host_2_http",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "first"
+                            }
+                          },
+                          "transport": {
+                            "protocol": "http",
+                            "tls": {
+                              "insecure_skip_verify": true
+                            }
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "nas:5001"
+                            },
+                            {
+                              "dial": "nas-backup:5001"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "nas.lan.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_not_configured_http",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        },
+        "cpm_https": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_host_2",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "load_balancing": {
+                            "selection_policy": {
+                              "policy": "first"
+                            }
+                          },
+                          "transport": {
+                            "protocol": "http",
+                            "tls": {
+                              "insecure_skip_verify": true
+                            }
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "nas:5001"
+                            },
+                            {
+                              "dial": "nas-backup:5001"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "nas.lan.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_not_configured_https",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "pki": {
+      "certificate_authorities": {
+        "local": {
+          "install_trust": false
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "issuers": [
+              {
+                "module": "internal"
+              }
+            ],
+            "subjects": [
+              "nas.lan.example.com"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

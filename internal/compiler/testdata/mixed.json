@@ -1,0 +1,232 @@
+{
+  "admin": {
+    "config": {
+      "persist": false
+    },
+    "listen": "unix//run/caddy/admin.sock|0660"
+  },
+  "apps": {
+    "http": {
+      "servers": {
+        "cpm_http": {
+          "listen": [
+            ":80"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_host_3",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "encodings": {
+                            "gzip": {},
+                            "zstd": {}
+                          },
+                          "handler": "encode",
+                          "prefer": [
+                            "zstd",
+                            "gzip"
+                          ]
+                        },
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "whoami:80"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "app.localhost"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_host_4_redirect",
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": "308"
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "old.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_host_5_redirect",
+              "handle": [
+                {
+                  "handler": "static_response",
+                  "headers": {
+                    "Location": [
+                      "https://{http.request.host}{http.request.uri}"
+                    ]
+                  },
+                  "status_code": "308"
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "*.parked.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_not_configured_http",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        },
+        "cpm_https": {
+          "automatic_https": {
+            "disable_redirects": true
+          },
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "@id": "cpm_host_4",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "static_response",
+                          "headers": {
+                            "Location": [
+                              "https://new.example.com{http.request.uri}"
+                            ]
+                          },
+                          "status_code": "308"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "old.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_host_5",
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "body": "Not found.\n",
+                          "handler": "static_response",
+                          "headers": {
+                            "Content-Type": [
+                              "text/plain; charset=utf-8"
+                            ]
+                          },
+                          "status_code": "404"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "*.parked.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "@id": "cpm_not_configured_https",
+              "handle": [
+                {
+                  "body": "No site is configured for this address.\n",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ]
+                  },
+                  "status_code": "404"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "pki": {
+      "certificate_authorities": {
+        "local": {
+          "install_trust": false
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "issuers": [
+              {
+                "module": "internal"
+              }
+            ],
+            "subjects": [
+              "*.parked.example.com"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

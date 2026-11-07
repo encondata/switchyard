@@ -1,6 +1,7 @@
 # CaddyProxyManager: Caddy + CPM on one host (spec §2, Deployment).
 #
 #   docker compose up -d --build
+#   docker compose --profile demo up -d --build   # also starts a test backend
 #
 # Caddy answers on 0.0.0.0:80 and :443; the CPM UI on 0.0.0.0:8080.
 # Caddy's admin API is only on a unix socket shared with CPM; port 2019 is
@@ -13,20 +14,21 @@ services:
     build: ./caddy
     image: cpm-caddy:local
     restart: unless-stopped
-    command: ["caddy", "run", "--config", "/etc/caddy/bootstrap.json"]
+    # The image's entrypoint starts Caddy as uid 1000 with the last config
+    # CPM applied, or caddy/bootstrap.json on a fresh install.
     ports:
       - "0.0.0.0:80:80"
       - "0.0.0.0:443:443"
       - "0.0.0.0:443:443/udp" # HTTP/3
     volumes:
-      - ./caddy/bootstrap.json:/etc/caddy/bootstrap.json:ro
+      - caddy-applied:/etc/caddy/cpm:ro
       - caddy-admin:/run/caddy
       - caddy-data:/data
       - caddy-config:/config
       - caddy-logs:/var/log/caddy
     healthcheck:
-      # Healthy once the admin socket is up (the default site answers 404,
-      # which wget would count as a failure).
+      # Healthy once the admin socket is up (unknown hosts answer 404, which
+      # wget would count as a failure).
       test: ["CMD-SHELL", "test -S /run/caddy/admin.sock"]
       interval: 10s
       timeout: 3s
@@ -48,14 +50,25 @@ services:
       CPM_LISTEN: 0.0.0.0:8080
       CPM_DATA_DIR: /data
       CPM_CADDY_ADMIN_SOCKET: /run/caddy/admin.sock
+      CPM_CADDY_CONFIG_FILE: /caddy-applied/caddy.json
+      CPM_CADDY_DATA_DIR: /caddy-data
     volumes:
       - cpm-data:/data
+      - caddy-applied:/caddy-applied
       - caddy-admin:/run/caddy
       - caddy-data:/caddy-data:ro
       - caddy-logs:/var/log/caddy:ro
 
+  # Test backend for trying CPM out: proxy a host to whoami:80. It echoes
+  # back the request it received. Only runs with `--profile demo`.
+  whoami:
+    image: traefik/whoami:v1.12.0@sha256:c4717a8d1f0134a7444e24f881160e033991f23027c6c5a9a3f8fd22e70d1d44
+    profiles: [demo]
+    restart: unless-stopped
+
 volumes:
   caddy-admin:
+  caddy-applied:
   caddy-data:
   caddy-config:
   caddy-logs:

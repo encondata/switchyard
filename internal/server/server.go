@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
@@ -27,6 +28,11 @@ type Options struct {
 	// SecureCookies marks the session cookie Secure (set when CPM is served
 	// over HTTPS).
 	SecureCookies bool
+	// Apply builds and applies Caddy configs. Host and config routes are only
+	// registered when it is set.
+	Apply *apply.Service
+	// CaddyDataDir is Caddy's data folder (mounted read-only), for cert status.
+	CaddyDataDir string
 }
 
 type srv struct {
@@ -35,6 +41,8 @@ type srv struct {
 	store         *store.Store
 	caddy         *caddyadmin.Client
 	secureCookies bool
+	apply         *apply.Service
+	caddyDataDir  string
 }
 
 // New returns the root HTTP handler.
@@ -48,6 +56,8 @@ func New(opts Options) http.Handler {
 		store:         opts.Store,
 		caddy:         opts.Caddy,
 		secureCookies: opts.SecureCookies,
+		apply:         opts.Apply,
+		caddyDataDir:  opts.CaddyDataDir,
 	}
 
 	mux := http.NewServeMux()
@@ -60,6 +70,18 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("GET /api/auth/me", s.requireUser(true, s.handleMe))
 		mux.HandleFunc("POST /api/auth/password", s.requireUser(true, s.handleChangePassword))
 		mux.HandleFunc("GET /api/status", s.requireUser(false, s.handleStatus))
+	}
+	if s.store != nil && s.apply != nil {
+		mux.HandleFunc("GET /api/hosts", s.requireUser(false, s.handleListHosts))
+		mux.HandleFunc("POST /api/hosts", s.requireEditor(s.handleSaveHost))
+		mux.HandleFunc("GET /api/hosts/{id}", s.requireUser(false, s.handleGetHost))
+		mux.HandleFunc("PUT /api/hosts/{id}", s.requireEditor(s.handleSaveHost))
+		mux.HandleFunc("DELETE /api/hosts/{id}", s.requireEditor(s.handleDeleteHost))
+		mux.HandleFunc("GET /api/config/preview", s.requireUser(false, s.handlePreview))
+		mux.HandleFunc("POST /api/config/apply", s.requireEditor(s.handleApply))
+		mux.HandleFunc("GET /api/config/versions", s.requireUser(false, s.handleListVersions))
+		mux.HandleFunc("GET /api/config/versions/{n}", s.requireUser(false, s.handleGetVersion))
+		mux.HandleFunc("POST /api/config/versions/{n}/rollback", s.requireEditor(s.handleRollback))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")

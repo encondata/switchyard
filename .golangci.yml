@@ -9,6 +9,11 @@ linters:
     - misspell
     - revive
     - unconvert
+  exclusions:
+    rules:
+      # Tests read fixtures by path and convert freely; gosec adds noise there.
+      - path: _test\.go
+        linters: [gosec]
 
 formatters:
   enable:

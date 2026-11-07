@@ -14,7 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
+	"github.com/encondata/caddyproxymanager/internal/compiler"
 	"github.com/encondata/caddyproxymanager/internal/server"
 	"github.com/encondata/caddyproxymanager/internal/store"
 	"github.com/encondata/caddyproxymanager/web"
@@ -59,8 +61,24 @@ func main() {
 	}()
 
 	var caddy *caddyadmin.Client
+	var caddyAPI apply.Caddy = noCaddy{}
 	if *caddySocket != "" {
 		caddy = caddyadmin.New(*caddySocket)
+		caddyAPI = caddy
+	}
+	adminListen := os.Getenv("CPM_CADDY_ADMIN_LISTEN")
+	if adminListen == "" {
+		socket := *caddySocket
+		if socket == "" {
+			socket = "/run/caddy/admin.sock"
+		}
+		adminListen = "unix/" + socket + "|0660"
+	}
+	applier := &apply.Service{
+		Store:      st,
+		Caddy:      caddyAPI,
+		Settings:   compiler.Settings{AdminListen: adminListen},
+		ConfigFile: os.Getenv("CPM_CADDY_CONFIG_FILE"),
 	}
 
 	srv := &http.Server{
@@ -68,6 +86,7 @@ func main() {
 		Handler: server.New(server.Options{
 			Version: version, UI: web.Dist(), Logger: logger,
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
+			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"),
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -87,6 +106,15 @@ func main() {
 		logger.Error("shutdown failed", "err", err)
 	}
 }
+
+// noCaddy stands in when no admin socket is configured (e.g. `make run`
+// during UI work): hosts can be edited, but applying fails clearly.
+type noCaddy struct{}
+
+var errNoCaddy = errors.New("no Caddy admin socket configured (set CPM_CADDY_ADMIN_SOCKET)")
+
+func (noCaddy) Config(context.Context) ([]byte, error) { return nil, errNoCaddy }
+func (noCaddy) Load(context.Context, []byte) error     { return errNoCaddy }
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

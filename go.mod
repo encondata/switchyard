@@ -3,6 +3,7 @@ module github.com/encondata/caddyproxymanager
 go 1.27.3
 
 require (
+	github.com/pmezard/go-difflib v1.0.0
 	golang.org/x/crypto v0.58.0
 	modernc.org/sqlite v1.62.0
 )

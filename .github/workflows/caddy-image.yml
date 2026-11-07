@@ -43,8 +43,11 @@ jobs:
         run: |
           docker run --rm cpm-caddy:test cpm-verify-modules
           docker run -d --name caddy -p 8080:80 cpm-caddy:test
-          for i in $(seq 1 20); do curl -fsS -o /dev/null http://127.0.0.1:8080/ && break; sleep 0.5; done
-          curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' http://127.0.0.1:8080/
+          # The bootstrap config answers every host with a 404 page.
+          for i in $(seq 1 20); do curl -sS -o /dev/null http://127.0.0.1:8080/ && break; sleep 0.5; done
+          curl -sS http://127.0.0.1:8080/ | grep -q 'No site is configured'
+          # Caddy must run as uid 1000, not root.
+          test "$(docker exec caddy sh -c 'stat -c %u /proc/$(pidof caddy)')" = 1000
           docker rm -f caddy
 
       - uses: docker/metadata-action@v6

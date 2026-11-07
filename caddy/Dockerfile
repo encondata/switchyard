@@ -26,7 +26,15 @@ FROM ${CADDY_IMAGE}
 COPY --from=build /out/caddy /usr/bin/caddy
 COPY modules.txt /etc/caddy/cpm-modules.txt
 COPY verify-modules.sh /usr/local/bin/cpm-verify-modules
-RUN caddy version && cpm-verify-modules
+COPY entrypoint.sh /usr/local/bin/cpm-caddy-start
+COPY bootstrap.json /etc/caddy/bootstrap.json
+# Caddy runs as uid 1000 (see entrypoint.sh); let it bind ports below 1024.
+RUN apk add --no-cache libcap su-exec \
+    && setcap cap_net_bind_service=+ep /usr/bin/caddy \
+    && caddy version && cpm-verify-modules
+
+ENTRYPOINT ["cpm-caddy-start"]
+CMD []
 
 LABEL org.opencontainers.image.title="cpm-caddy" \
       org.opencontainers.image.description="Caddy built for CaddyProxyManager" \

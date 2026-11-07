@@ -43,9 +43,22 @@ docker compose up -d --build
 - First sign-in: **admin / 123456**. You must choose a new password before
   anything else works.
 
-Caddy starts from `caddy/bootstrap.json`, which puts its admin API on the
-unix socket `/run/caddy/admin.sock` (shared with CPM through a volume) and
-nothing else. To start over with a fresh database (and the default admin
+### Try it
+
+1. Start with the demo backend: `docker compose --profile demo up -d --build`
+2. In CPM, **Hosts → Add host**: domain `app.localhost`, upstream
+   `whoami` port `80`. Names ending in `.localhost` reach this machine with
+   no DNS setup, and Caddy gives them certificates from its internal CA.
+3. **Review & apply** shows the config diff; **Apply to Caddy**.
+4. Open `https://app.localhost` (accept the certificate warning) or
+   `curl -k https://app.localhost`. whoami echoes the request it received.
+5. **History** lists every apply; **Roll back** re-sends an older version.
+
+Caddy runs as uid 1000 (the same user as CPM, so CPM can read certificate
+status from Caddy's data folder) and starts with the last config CPM
+applied, or `caddy/bootstrap.json` on a fresh install. Either way its admin
+API is only on the unix socket `/run/caddy/admin.sock`, shared with CPM
+through a volume. To start over with a fresh database (and the default admin
 again): `docker compose down && docker volume rm cpm_cpm-data`.
 
 ## Requirements
