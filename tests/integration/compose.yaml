@@ -1,0 +1,22 @@
+# Integration test stack: the normal compose.yaml plus Pebble (Let's
+# Encrypt's test CA) and test ports. Used by tests/integration/run.sh.
+services:
+  pebble:
+    image: ghcr.io/letsencrypt/pebble:2.10.1@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199
+    environment:
+      # Accept every challenge, so the test needs no DNS for its domains.
+      PEBBLE_VA_ALWAYS_VALID: "1"
+      PEBBLE_VA_NOSLEEP: "1"
+  caddy:
+    ports: !override
+      - "127.0.0.1:28000:80"
+      - "127.0.0.1:28443:443"
+    volumes:
+      - ${PEBBLE_ROOT_PEM:?run tests/integration/run.sh}:/etc/caddy/pebble-root.pem:ro
+  cpm:
+    ports: !override
+      - "127.0.0.1:28080:8080"
+    environment:
+      CPM_ACME_CA: https://pebble:14000/dir
+      CPM_ACME_CA_ROOTS: /etc/caddy/pebble-root.pem
+      CPM_SECRET_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=

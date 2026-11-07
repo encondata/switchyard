@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -108,13 +109,14 @@ func main() {
 		Store: st,
 		Caddy: caddyAPI,
 		Settings: compiler.Settings{
-			AdminListen:   adminListen,
-			SecretsDir:    secretsDir,
-			ACMECA:        os.Getenv("CPM_ACME_CA"),
-			ACMEEmail:     os.Getenv("CPM_ACME_EMAIL"),
-			TLSLogFile:    envOr("CPM_CADDY_TLS_LOG", "/var/log/caddy/tls.log"),
-			GeoIPDB:       envOr("CPM_CADDY_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb"),
-			AccessLogFile: envOr("CPM_CADDY_ACCESS_LOG", "/var/log/caddy/access.log"),
+			AdminListen:      adminListen,
+			SecretsDir:       secretsDir,
+			ACMECA:           os.Getenv("CPM_ACME_CA"),
+			ACMEEmail:        os.Getenv("CPM_ACME_EMAIL"),
+			ACMETrustedRoots: splitList(os.Getenv("CPM_ACME_CA_ROOTS")),
+			TLSLogFile:       envOr("CPM_CADDY_TLS_LOG", "/var/log/caddy/tls.log"),
+			GeoIPDB:          envOr("CPM_CADDY_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb"),
+			AccessLogFile:    envOr("CPM_CADDY_ACCESS_LOG", "/var/log/caddy/access.log"),
 		},
 		GeoIP:      geo,
 		ConfigFile: os.Getenv("CPM_CADDY_CONFIG_FILE"),
@@ -213,6 +215,17 @@ var errNoCaddy = errors.New("no Caddy admin socket configured (set CPM_CADDY_ADM
 
 func (noCaddy) Config(context.Context) ([]byte, error) { return nil, errNoCaddy }
 func (noCaddy) Load(context.Context, []byte) error     { return errNoCaddy }
+
+// splitList splits a comma-separated setting, dropping empty items.
+func splitList(v string) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
 
 func envOr(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

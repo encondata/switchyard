@@ -43,6 +43,9 @@ type Settings struct {
 	ACMECA string
 	// ACMEEmail is the contact address for ACME accounts (optional).
 	ACMEEmail string
+	// ACMETrustedRoots are PEM files (as Caddy sees them) of extra CA roots
+	// to trust when talking to the ACME server, e.g. a Pebble test server.
+	ACMETrustedRoots []string
 	// GeoIPDB is the GeoLite2-Country database path as Caddy sees it;
 	// GeoIPReady says whether it exists. Country rules need both.
 	GeoIPDB    string
@@ -278,6 +281,9 @@ func acmeIssuer(s Settings) obj {
 	}
 	if s.ACMEEmail != "" {
 		iss["email"] = s.ACMEEmail
+	}
+	if len(s.ACMETrustedRoots) > 0 {
+		iss["trusted_roots_pem_files"] = s.ACMETrustedRoots
 	}
 	return iss
 }
