@@ -215,6 +215,41 @@ export type Preview = {
   candidate_sha256: string
 }
 
+export type Alert = {
+  id: number
+  kind: string
+  subject: string
+  message: string
+  created_at: string
+  last_seen_at: string
+  resolved_at?: string
+}
+
+export type CertRow = {
+  domain: string
+  host_id: number
+  tls_mode: TLSMode
+  state: CertState
+  issuer?: string
+  not_after?: string
+  last_error?: { message: string; at: string }
+}
+
+export type Health = {
+  version: string
+  monitor: {
+    checked_at: string
+    caddy_reachable: boolean
+    caddy_error?: string
+    drift: boolean
+    last_apply?: ConfigVersion
+    log_bytes: number
+  }
+  alerts: Alert[]
+  db_bytes: number
+  secrets_ready: boolean
+}
+
 export class ApiError extends Error {
   status: number
   code: string
@@ -342,6 +377,31 @@ export const api = {
   deleteNeverBan: (cidr: string) =>
     request<void>('DELETE', `/api/never-ban?cidr=${encodeURIComponent(cidr)}`),
   whoami: () => request<{ ip: string }>('GET', '/api/whoami'),
+
+  alerts: () => request<Alert[]>('GET', '/api/alerts'),
+  health: () => request<Health>('GET', '/api/health/details'),
+  checkNow: () => request<Health>('POST', '/api/health/check'),
+  certificates: () => request<CertRow[]>('GET', '/api/certificates'),
+  retryCerts: () => request<void>('POST', '/api/certificates/retry'),
+  restore: async (file: File) => {
+    const res = await fetch('/api/restore', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/vnd.sqlite3' },
+      body: file,
+    })
+    const data = (await res.json().catch(() => ({}))) as {
+      message?: string
+      error?: string
+    }
+    if (!res.ok)
+      throw new ApiError(
+        res.status,
+        data.error ?? 'error',
+        data.message ?? `HTTP ${res.status}`,
+      )
+    return data.message ?? 'Restoring…'
+  },
 
   dnsProviders: () =>
     request<{ providers: DNSProvider[]; secrets_ready: boolean }>(

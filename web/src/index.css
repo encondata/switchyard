@@ -607,3 +607,37 @@ details summary {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.banner.alert {
+  background: var(--del-bg);
+}
+
+.alert-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.error-cell {
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+
+.file-button {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.file-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.stack > .card {
+  margin: 0;
+}

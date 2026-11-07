@@ -1,12 +1,5 @@
 import { useEffect, useState } from 'react'
-import {
-  api,
-  ApiError,
-  message,
-  type ConfigVersion,
-  type Preview,
-  type Status,
-} from './api'
+import { api, ApiError, message, type ConfigVersion, type Preview } from './api'
 
 function Diff({ text }: { text: string }) {
   return (
@@ -254,48 +247,6 @@ export function History({
           <h2>Version {open.n}</h2>
           <pre className="diff">{open.json}</pre>
         </>
-      )}
-    </section>
-  )
-}
-
-export function StatusPage() {
-  const [status, setStatus] = useState<Status | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    api
-      .status()
-      .then(setStatus)
-      .catch((err: unknown) => setError(message(err)))
-  }, [])
-
-  return (
-    <section className="card">
-      <h1>Status</h1>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      {!status && !error && <p>Checking…</p>}
-      {status && (
-        <dl>
-          <dt>CPM version</dt>
-          <dd>{status.version}</dd>
-          <dt>Caddy admin API</dt>
-          <dd>
-            {status.caddy.reachable ? (
-              <span className="ok">Reachable</span>
-            ) : (
-              <span className="bad">Not reachable</span>
-            )}
-            {status.caddy.socket && <code> {status.caddy.socket}</code>}
-            {status.caddy.error && (
-              <div className="hint">{status.caddy.error}</div>
-            )}
-          </dd>
-        </dl>
       )}
     </section>
   )

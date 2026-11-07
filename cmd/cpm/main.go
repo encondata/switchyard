@@ -17,6 +17,7 @@ import (
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
 	"github.com/encondata/caddyproxymanager/internal/compiler"
+	"github.com/encondata/caddyproxymanager/internal/monitor"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/server"
 	"github.com/encondata/caddyproxymanager/internal/store"
@@ -42,7 +43,12 @@ func main() {
 		logger.Error("creating data dir", "err", err)
 		os.Exit(1)
 	}
-	st, err := store.Open(ctx, filepath.Join(*dataDir, "cpm.db"))
+	dbPath := filepath.Join(*dataDir, "cpm.db")
+	if err := swapInRestore(*dataDir, dbPath, logger); err != nil {
+		logger.Error("restoring backup", "err", err)
+		os.Exit(1)
+	}
+	st, err := store.Open(ctx, dbPath)
 	if err != nil {
 		logger.Error("opening database", "err", err)
 		os.Exit(1)
@@ -92,6 +98,7 @@ func main() {
 			SecretsDir:  secretsDir,
 			ACMECA:      os.Getenv("CPM_ACME_CA"),
 			ACMEEmail:   os.Getenv("CPM_ACME_EMAIL"),
+			TLSLogFile:  envOr("CPM_CADDY_TLS_LOG", "/var/log/caddy/tls.log"),
 		},
 		ConfigFile: os.Getenv("CPM_CADDY_CONFIG_FILE"),
 		Box:        box,
@@ -103,12 +110,24 @@ func main() {
 		logger.Warn("writing DNS provider tokens", "err", err)
 	}
 
+	var mon *monitor.Monitor
+	if caddy != nil {
+		mon = &monitor.Monitor{
+			Store: st, Caddy: caddy, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"),
+			TLSLogFile: envOr("CPM_CADDY_TLS_LOG", "/var/log/caddy/tls.log"),
+			LogDir:     envOr("CPM_CADDY_LOG_DIR", "/var/log/caddy"),
+			Notifier:   monitor.LogNotifier{Log: logger}, Log: logger,
+		}
+		go mon.Run(ctx)
+	}
+
 	srv := &http.Server{
 		Addr: *listen,
 		Handler: server.New(server.Options{
 			Version: version, UI: web.Dist(), Logger: logger,
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
 			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"), Box: box,
+			Monitor: mon, DataDir: *dataDir, Restart: stop,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -127,6 +146,26 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Error("shutdown failed", "err", err)
 	}
+}
+
+// swapInRestore replaces the database with a staged backup (uploaded on
+// the health page), keeping the old one as cpm.db.before-restore-<time>.
+func swapInRestore(dataDir, dbPath string, log *slog.Logger) error {
+	staged := filepath.Join(dataDir, server.RestoreFile)
+	if _, err := os.Stat(staged); err != nil {
+		return nil
+	}
+	if _, err := os.Stat(dbPath); err == nil {
+		old := dbPath + ".before-restore-" + time.Now().UTC().Format("20060102-150405")
+		if err := os.Rename(dbPath, old); err != nil {
+			return err
+		}
+		for _, ext := range []string{"-wal", "-shm"} {
+			_ = os.Rename(dbPath+ext, old+ext)
+		}
+		log.Warn("restoring backup; previous database kept", "previous", old)
+	}
+	return os.Rename(staged, dbPath)
 }
 
 // noCaddy stands in when no admin socket is configured (e.g. `make run`

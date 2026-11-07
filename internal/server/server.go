@@ -15,6 +15,7 @@ import (
 
 	"github.com/encondata/caddyproxymanager/internal/apply"
 	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
+	"github.com/encondata/caddyproxymanager/internal/monitor"
 	"github.com/encondata/caddyproxymanager/internal/secrets"
 	"github.com/encondata/caddyproxymanager/internal/store"
 )
@@ -38,6 +39,12 @@ type Options struct {
 	CaddyDataDir string
 	// Box seals DNS provider tokens. Nil when CPM_SECRET_KEY isn't set.
 	Box *secrets.Box
+	// Monitor runs background checks; required with Apply.
+	Monitor *monitor.Monitor
+	// DataDir holds the database (backups, restores).
+	DataDir string
+	// Restart stops the server so it restarts (after a restore).
+	Restart func()
 }
 
 type srv struct {
@@ -49,6 +56,9 @@ type srv struct {
 	apply         *apply.Service
 	caddyDataDir  string
 	box           *secrets.Box
+	monitor       *monitor.Monitor
+	dataDir       string
+	restart       func()
 }
 
 // New returns the root HTTP handler.
@@ -65,6 +75,9 @@ func New(opts Options) http.Handler {
 		apply:         opts.Apply,
 		caddyDataDir:  opts.CaddyDataDir,
 		box:           opts.Box,
+		monitor:       opts.Monitor,
+		dataDir:       opts.DataDir,
+		restart:       opts.Restart,
 	}
 
 	mux := http.NewServeMux()
@@ -109,6 +122,15 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("PUT /api/dns-providers/{id}", s.requireAdmin(s.handleSaveDNSProvider))
 		mux.HandleFunc("DELETE /api/dns-providers/{id}", s.requireAdmin(s.handleDeleteDNSProvider))
 		mux.HandleFunc("POST /api/dns-providers/{id}/verify", s.requireEditor(s.handleVerifyDNSProvider))
+		mux.HandleFunc("GET /api/certificates", s.requireUser(false, s.handleCertificates))
+		mux.HandleFunc("POST /api/certificates/retry", s.requireEditor(s.handleRetryCerts))
+	}
+	if s.store != nil && s.monitor != nil {
+		mux.HandleFunc("GET /api/alerts", s.requireUser(false, s.handleAlerts))
+		mux.HandleFunc("GET /api/health/details", s.requireUser(false, s.handleHealth))
+		mux.HandleFunc("POST /api/health/check", s.requireUser(false, s.handleCheckNow))
+		mux.HandleFunc("GET /api/backup", s.requireAdmin(s.handleBackup))
+		mux.HandleFunc("POST /api/restore", s.requireAdmin(s.handleRestore))
 	}
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "Not found.")

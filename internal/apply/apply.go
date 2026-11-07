@@ -135,6 +135,26 @@ func (s *Service) Rollback(ctx context.Context, n int64, username string) (store
 	return s.load(ctx, []byte(v.JSON), username, fmt.Sprintf("rollback to version %d", n))
 }
 
+// Retry makes Caddy reload the config it's running, which restarts
+// certificate management so failed certificates are tried again now
+// instead of after Caddy's backoff.
+func (s *Service) Retry(ctx context.Context) error {
+	r, ok := s.Caddy.(interface {
+		Reload(ctx context.Context, config []byte) error
+	})
+	if !ok {
+		return errors.New("this Caddy client can't force a reload")
+	}
+	if err := s.SyncSecrets(ctx); err != nil {
+		return err
+	}
+	running, err := s.Caddy.Config(ctx)
+	if err != nil {
+		return err
+	}
+	return r.Reload(ctx, running)
+}
+
 // SyncSecrets writes each DNS provider's token to SecretsDir (mode 0600,
 // readable by Caddy, which runs as the same user) and removes files for
 // providers that no longer exist.

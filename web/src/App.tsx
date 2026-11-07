@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, type Preview, type User } from './api'
+import { api, ApiError, type Alert, type Preview, type User } from './api'
 import { ChangePassword, Login } from './auth'
-import { Changes, History, StatusPage } from './config'
+import { Changes, History } from './config'
 import { AccessPage } from './access'
 import { DNSPage } from './dns'
+import { Certificates, HealthPage } from './ops'
 import { HostEditor, HostList } from './hosts'
 
 // Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
@@ -50,6 +51,20 @@ function App() {
   useEffect(() => {
     if (ready) refreshPending()
   }, [ready, route, refreshPending])
+
+  // Open alerts show on every page (spec F2).
+  const [alerts, setAlerts] = useState<Alert[]>([])
+  useEffect(() => {
+    if (!ready) return
+    const load = () =>
+      api
+        .alerts()
+        .then(setAlerts)
+        .catch(() => setAlerts([]))
+    load()
+    const t = setInterval(load, 60_000)
+    return () => clearInterval(t)
+  }, [ready, route])
 
   async function signOut() {
     await api.logout().catch(() => undefined)
@@ -104,7 +119,9 @@ function App() {
     body = <Changes canEdit={canEdit} onApplied={refreshPending} />
   else if (route === '/history')
     body = <History canEdit={canEdit} onRolledBack={refreshPending} />
-  else if (route === '/status') body = <StatusPage />
+  else if (route === '/status' || route === '/health')
+    body = <HealthPage isAdmin={user.role === 'admin'} />
+  else if (route === '/certificates') body = <Certificates canEdit={canEdit} />
   else if (route === '/dns')
     body = (
       <DNSPage isAdmin={user.role === 'admin'} onChanged={refreshPending} />
@@ -117,9 +134,10 @@ function App() {
     ['/hosts', 'Hosts'],
     ['/access', 'Access'],
     ['/dns', 'DNS'],
+    ['/certificates', 'Certificates'],
     ['/changes', 'Review & apply'],
     ['/history', 'History'],
-    ['/status', 'Status'],
+    ['/health', 'Health'],
   ]
 
   return (
@@ -159,6 +177,14 @@ function App() {
           </nav>
         )}
       </header>
+      {ready && alerts.length > 0 && route !== '/health' && (
+        <div className="banner alert">
+          {alerts.length === 1
+            ? alerts[0].message
+            : `${alerts.length} alerts need attention.`}{' '}
+          <a href="#/health">See health</a>
+        </div>
+      )}
       {ready && preview?.pending && route !== '/changes' && (
         <div className="banner">
           {preview.drift
