@@ -1,3 +1,6 @@
+/** One user's display preferences. accent '' = the default green. */
+export type Prefs = { accent: string }
+
 export type User = {
   id: number
   username: string
@@ -477,6 +480,9 @@ async function request<T>(
 
 export const api = {
   me: () => request<User>('GET', '/api/auth/me'),
+  preferences: () => request<Prefs>('GET', '/api/auth/preferences'),
+  savePreferences: (p: Prefs) =>
+    request<Prefs>('PUT', '/api/auth/preferences', p),
   login: (username: string, password: string) =>
     request<LoginResult>('POST', '/api/auth/login', { username, password }),
   loginTOTP: (challenge: string, code: string) =>
@@ -644,7 +650,9 @@ export const api = {
   statsIP: (ip: string) =>
     request<IPDetail>('GET', `/api/stats/ip/${encodeURIComponent(ip)}`),
 
-  alerts: () => request<Alert[]>('GET', '/api/alerts'),
+  /** Open alerts, or with all=true also recently resolved ones. */
+  alerts: (all = false) =>
+    request<Alert[]>('GET', all ? '/api/alerts?all=1' : '/api/alerts'),
   health: () => request<Health>('GET', '/api/health/details'),
   checkNow: () => request<Health>('POST', '/api/health/check'),
   certificates: () => request<CertRow[]>('GET', '/api/certificates'),

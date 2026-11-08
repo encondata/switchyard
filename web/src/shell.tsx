@@ -16,7 +16,8 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { api, type HostView, type User } from './api'
+import { api, type Alert, type HostView, type User } from './api'
+import { NotificationBell } from './notify'
 
 /** The CPM mark: one entry point fanning out to upstreams. */
 export function Logo() {
@@ -349,7 +350,15 @@ function CaddyStatus() {
   )
 }
 
-export function Topbar({ route }: { route: string }) {
+export function Topbar({
+  route,
+  alerts,
+  username,
+}: {
+  route: string
+  alerts: Alert[] | null
+  username: string
+}) {
   const section = route.split(/[/?]/)[1] || 'dashboard'
   const name = pageNames[section] ?? 'Dashboard'
   const sub = route.startsWith('/hosts/new')
@@ -374,6 +383,7 @@ export function Topbar({ route }: { route: string }) {
         )}
       </div>
       <GlobalSearch />
+      <NotificationBell key={username} alerts={alerts} username={username} />
       <CaddyStatus />
     </header>
   )

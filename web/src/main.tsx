@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import '@fontsource-variable/inter'
 import './index.css'
 import App from './App.tsx'
+import { applyStoredAccent } from './accent'
 
 // Light by default; dark only if the user chose it (see the header toggle).
 try {
@@ -11,6 +12,8 @@ try {
 } catch {
   // storage unavailable: stay light
 }
+
+applyStoredAccent()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

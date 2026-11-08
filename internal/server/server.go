@@ -128,6 +128,8 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
 		mux.HandleFunc("GET /api/auth/me", s.requireUser(true, s.handleMe))
 		mux.HandleFunc("POST /api/auth/password", s.requireUser(true, s.handleChangePassword))
+		mux.HandleFunc("GET /api/auth/preferences", s.requireUser(false, s.handleGetPrefs))
+		mux.HandleFunc("PUT /api/auth/preferences", s.requireUser(false, s.handlePutPrefs))
 		mux.HandleFunc("GET /api/status", s.requireUser(false, s.handleStatus))
 	}
 	if s.store != nil && s.apply != nil {

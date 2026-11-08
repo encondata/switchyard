@@ -13,6 +13,9 @@ import { Dashboard } from './dashboard'
 import { HoneypotPage } from './honeypot'
 import { Logo, Sidebar, Topbar } from './shell'
 import { ArrowRight, TriangleAlert } from 'lucide-react'
+import { applyAccent } from './accent'
+import { Toaster } from './notify'
+import { toast, useAlertToasts } from './toast'
 
 // Hash routes: #/dashboard, #/hosts, #/hosts/new, #/hosts/3, #/changes, …
 function useRoute(): string {
@@ -49,6 +52,16 @@ function App() {
   }, [])
 
   const ready = !!user && !user.must_change_password && !user.must_enroll_2fa
+
+  // The signed-in user's accent color follows them across browsers.
+  const userId = user?.id
+  useEffect(() => {
+    if (!ready) return
+    api
+      .preferences()
+      .then((p) => applyAccent(p.accent))
+      .catch(() => undefined)
+  }, [ready, userId])
   const refreshPending = useCallback(() => {
     api
       .preview()
@@ -59,22 +72,28 @@ function App() {
     if (ready) refreshPending()
   }, [ready, route, refreshPending])
 
-  // Open alerts show on every page (spec F2).
-  const [alerts, setAlerts] = useState<Alert[]>([])
+  // Alerts feed the banner (open ones), the bell and toasts (spec F2).
+  const [allAlerts, setAllAlerts] = useState<Alert[] | null>(null)
   useEffect(() => {
-    if (!ready) return
+    if (!ready) {
+      setAllAlerts(null) // eslint-disable-line react-hooks/set-state-in-effect
+      return
+    }
     const load = () =>
       api
-        .alerts()
-        .then(setAlerts)
-        .catch(() => setAlerts([]))
+        .alerts(true)
+        .then(setAllAlerts)
+        .catch(() => undefined)
     load()
-    const t = setInterval(load, 60_000)
+    const t = setInterval(load, 30_000)
     return () => clearInterval(t)
   }, [ready, route])
+  useAlertToasts(allAlerts)
+  const alerts = (allAlerts ?? []).filter((a) => !a.resolved_at)
 
   async function signOut() {
     await api.logout().catch(() => undefined)
+    applyAccent('')
     setUser(null)
     setChangingPassword(false)
   }
@@ -144,7 +163,18 @@ function App() {
       />
     )
   else if (route === '/changes')
-    body = <Changes canEdit={canEdit} onApplied={refreshPending} />
+    body = (
+      <Changes
+        canEdit={canEdit}
+        onApplied={() => {
+          refreshPending()
+          toast('Changes applied', {
+            tone: 'good',
+            body: 'Caddy is running the new config.',
+          })
+        }}
+      />
+    )
   else if (route === '/history')
     body = <History canEdit={canEdit} onRolledBack={refreshPending} />
   else if (route === '/status' || route === '/health')
@@ -207,7 +237,7 @@ function App() {
         onSignOut={signOut}
       />
       <div className="main">
-        <Topbar route={route} />
+        <Topbar route={route} alerts={allAlerts} username={user.username} />
         <main className="content">
           {alerts.length > 0 && route !== '/health' && (
             <div className="banner banner-bad" role="alert">
@@ -236,6 +266,7 @@ function App() {
           {body}
         </main>
       </div>
+      <Toaster />
     </div>
   )
 }

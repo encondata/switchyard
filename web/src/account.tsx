@@ -1,6 +1,13 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import qrcode from 'qrcode-generator'
+import { Check } from 'lucide-react'
 import { api, ApiError, message, type TwoFAStatus, type User } from './api'
+import {
+  accentPresets,
+  applyAccent,
+  contrastWithWhite,
+  defaultAccent,
+} from './accent'
 
 /** Renders an otpauth:// URI as an SVG QR code. */
 function QRCode({ value }: { value: string }) {
@@ -175,70 +182,183 @@ export function AccountPage({
   }
 
   return (
-    <section className="card narrow-wide">
-      <h1>Your account</h1>
-      <dl>
-        <dt>Username</dt>
-        <dd>{user.username}</dd>
-        <dt>Role</dt>
-        <dd>{user.role}</dd>
-        <dt>Password</dt>
-        <dd>
-          <button className="link" onClick={onChangePassword}>
-            Change password
-          </button>
-        </dd>
-      </dl>
-      <h2>Two-factor sign-in</h2>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      {status && !status.available && !status.enabled && (
-        <p className="hint">
-          Not available: the server has no CPM_SECRET_KEY to store secrets
-          encrypted.
-        </p>
-      )}
-      {status && status.enabled && (
-        <>
-          <p>
-            <span className="ok">On.</span> {status.backup_codes_left} backup
-            code(s) left.
+    <div className="stack account">
+      <section className="card narrow-wide">
+        <h1>Your account</h1>
+        <dl>
+          <dt>Username</dt>
+          <dd>{user.username}</dd>
+          <dt>Role</dt>
+          <dd>{user.role}</dd>
+          <dt>Password</dt>
+          <dd>
+            <button className="link" onClick={onChangePassword}>
+              Change password
+            </button>
+          </dd>
+        </dl>
+        <h2>Two-factor sign-in</h2>
+        {error && (
+          <p className="error" role="alert">
+            {error}
           </p>
-          {status.required ? (
-            <p className="hint">Required for everyone by your admin.</p>
-          ) : (
-            <form className="actions" onSubmit={disable}>
-              <input
-                type="password"
-                placeholder="Your password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <button className="secondary">Turn off</button>
-            </form>
-          )}
-        </>
-      )}
-      {status && !status.enabled && status.available && !settingUp && (
-        <div>
-          <p>Off. Add a code from your phone to every sign-in.</p>
-          <button onClick={() => setSettingUp(true)}>Set up</button>
+        )}
+        {status && !status.available && !status.enabled && (
+          <p className="hint">
+            Not available: the server has no CPM_SECRET_KEY to store secrets
+            encrypted.
+          </p>
+        )}
+        {status && status.enabled && (
+          <>
+            <p>
+              <span className="ok">On.</span> {status.backup_codes_left} backup
+              code(s) left.
+            </p>
+            {status.required ? (
+              <p className="hint">Required for everyone by your admin.</p>
+            ) : (
+              <form className="actions" onSubmit={disable}>
+                <input
+                  type="password"
+                  placeholder="Your password"
+                  autoComplete="current-password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button className="secondary">Turn off</button>
+              </form>
+            )}
+          </>
+        )}
+        {status && !status.enabled && status.available && !settingUp && (
+          <div>
+            <p>Off. Add a code from your phone to every sign-in.</p>
+            <button onClick={() => setSettingUp(true)}>Set up</button>
+          </div>
+        )}
+        {settingUp && (
+          <TwoFASetup
+            onDone={() => {
+              setSettingUp(false)
+              load()
+              onChanged()
+            }}
+          />
+        )}
+      </section>
+      <Preferences />
+    </div>
+  )
+}
+
+/** Display preferences saved with the account, so they follow you to any browser. */
+function Preferences() {
+  const [accent, setAccent] = useState<string | null>(null)
+  const [custom, setCustom] = useState(defaultAccent)
+  const [error, setError] = useState<string | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
+
+  useEffect(() => {
+    api
+      .preferences()
+      .then((p) => {
+        setAccent(p.accent)
+        if (p.accent) setCustom(p.accent)
+      })
+      .catch((err: unknown) => setError(message(err)))
+  }, [])
+
+  async function save(hex: string, name: string) {
+    setError(null)
+    setSaved(null)
+    const before = accent ?? ''
+    setAccent(hex)
+    applyAccent(hex)
+    try {
+      await api.savePreferences({ accent: hex })
+      setSaved(`Accent set to ${name}.`)
+    } catch (err) {
+      setAccent(before)
+      applyAccent(before)
+      setError(message(err))
+    }
+  }
+
+  const isPreset = accentPresets.some((p) => p.hex === accent)
+  const customOK = contrastWithWhite(custom) >= 4.5
+
+  return (
+    <section className="card narrow-wide">
+      <h1>Preferences</h1>
+      <div className="pref">
+        <h2 id="accent-label">Accent color</h2>
+        <p className="hint">
+          Used for buttons, links, highlights and the traffic chart. Saved to
+          your account, so it follows you to any browser.
+        </p>
+        {accent !== null && (
+          <div
+            className="swatches"
+            role="radiogroup"
+            aria-labelledby="accent-label"
+          >
+            {accentPresets.map((p) => (
+              <button
+                key={p.name}
+                type="button"
+                role="radio"
+                aria-checked={accent === p.hex}
+                className={`swatch${accent === p.hex ? ' selected' : ''}`}
+                onClick={() => void save(p.hex, p.name)}
+                title={p.name}
+              >
+                <span
+                  className="swatch-color"
+                  style={{ background: p.hex || defaultAccent }}
+                >
+                  {accent === p.hex && <Check size={16} strokeWidth={3} />}
+                </span>
+                <span className="swatch-name">
+                  {p.name}
+                  {!p.hex && ' (default)'}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="custom-accent">
+          <label className="inline">
+            <input
+              type="color"
+              value={custom}
+              onChange={(e) => setCustom(e.target.value)}
+              aria-label="Custom accent color"
+            />
+            Custom <code>{custom}</code>
+          </label>
+          <button
+            type="button"
+            className="secondary"
+            disabled={!customOK || (accent === custom && !isPreset)}
+            onClick={() => void save(custom, custom)}
+          >
+            Use custom color
+          </button>
         </div>
-      )}
-      {settingUp && (
-        <TwoFASetup
-          onDone={() => {
-            setSettingUp(false)
-            load()
-            onChanged()
-          }}
-        />
-      )}
+        {!customOK && (
+          <p className="field-error">
+            That color is too light for white button text. Pick a darker shade.
+          </p>
+        )}
+        {error && <p className="error">{error}</p>}
+        {saved && (
+          <p className="success" role="status">
+            {saved}
+          </p>
+        )}
+      </div>
     </section>
   )
 }
