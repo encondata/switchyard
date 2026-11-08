@@ -5,6 +5,7 @@ import {
   type ImportPlan,
   type ImportResult,
   type MySQLConfig,
+  type NPMConnection,
 } from './api'
 
 const tlsText = {
@@ -15,7 +16,13 @@ const tlsText = {
 }
 
 export function ImportPage({ onImported }: { onImported: () => void }) {
-  const [source, setSource] = useState<'file' | 'mysql'>('file')
+  const [source, setSource] = useState<'api' | 'file' | 'mysql'>('api')
+  const [npm, setNpm] = useState<NPMConnection>({
+    url: '',
+    email: '',
+    password: '',
+    insecure_tls: false,
+  })
   const [mysql, setMysql] = useState<MySQLConfig>({
     host: '',
     port: 3306,
@@ -50,6 +57,15 @@ export function ImportPage({ onImported }: { onImported: () => void }) {
       setPreview(await api.importPreviewFile(file))
     })
 
+  const fromAPI = (e: FormEvent) => {
+    e.preventDefault()
+    void run(async () => {
+      setResult(null)
+      setPreview(await api.importPreviewAPI(npm))
+      setNpm((n) => ({ ...n, password: '' }))
+    })
+  }
+
   const fromMySQL = (e: FormEvent) => {
     e.preventDefault()
     void run(async () => {
@@ -66,107 +82,190 @@ export function ImportPage({ onImported }: { onImported: () => void }) {
       <section className="card">
         <h1>Import from Nginx Proxy Manager</h1>
         <p className="hint">
-          CPM reads NPM’s database and shows what it will create. Nothing
+          CPM signs in to your running NPM, reads its hosts, redirects,
+          certificates and access lists, and shows what it will create. Nothing
           changes until you confirm. Imported hosts go into the “Imported”
           folder, <strong>disabled</strong>, so you can review each one before
           enabling it. NPM isn’t touched.
         </p>
-        <div className="segmented">
-          <label>
-            <input
-              type="radio"
-              checked={source === 'file'}
-              onChange={() => setSource('file')}
-            />
-            SQLite file (default NPM install)
-          </label>
-          <label>
-            <input
-              type="radio"
-              checked={source === 'mysql'}
-              onChange={() => setSource('mysql')}
-            />
-            MySQL / MariaDB
-          </label>
-        </div>
-        {source === 'file' ? (
-          <div className="stack-tight">
-            <p className="hint">
-              Copy <code>/data/database.sqlite</code> out of the NPM container,
-              e.g. <code>docker cp npm:/data/database.sqlite .</code>
-            </p>
-            <label className="button secondary file-button">
-              {busy ? 'Reading…' : 'Choose database.sqlite…'}
+        {source === 'api' ? (
+          <form className="folder-form" onSubmit={fromAPI}>
+            <label>
+              NPM address
               <input
-                type="file"
-                accept=".sqlite,.db"
-                onChange={(e) => fromFile(e.target.files?.[0])}
+                required
+                placeholder="http://192.168.1.10:81"
+                value={npm.url}
+                onChange={(e) => setNpm({ ...npm, url: e.target.value })}
               />
+              <span className="hint">
+                The address you open NPM’s admin page at (port 81 by default).
+                CPM’s container must be able to reach it.
+              </span>
             </label>
-          </div>
-        ) : (
-          <form className="folder-form" onSubmit={fromMySQL}>
             <div className="actions">
               <label className="grow">
-                Host
+                NPM admin email
                 <input
                   required
-                  value={mysql.host}
-                  onChange={(e) => setMysql({ ...mysql, host: e.target.value })}
-                />
-              </label>
-              <label>
-                Port
-                <input
-                  type="number"
-                  value={mysql.port}
-                  onChange={(e) =>
-                    setMysql({ ...mysql, port: Number(e.target.value) })
-                  }
-                />
-              </label>
-            </div>
-            <div className="actions">
-              <label className="grow">
-                User
-                <input
-                  required
-                  value={mysql.user}
-                  onChange={(e) => setMysql({ ...mysql, user: e.target.value })}
+                  type="email"
+                  autoComplete="off"
+                  value={npm.email}
+                  onChange={(e) => setNpm({ ...npm, email: e.target.value })}
                 />
               </label>
               <label className="grow">
                 Password
                 <input
+                  required
                   type="password"
                   autoComplete="off"
-                  value={mysql.password}
-                  onChange={(e) =>
-                    setMysql({ ...mysql, password: e.target.value })
-                  }
-                />
-              </label>
-              <label className="grow">
-                Database
-                <input
-                  required
-                  value={mysql.database}
-                  onChange={(e) =>
-                    setMysql({ ...mysql, database: e.target.value })
-                  }
+                  value={npm.password}
+                  onChange={(e) => setNpm({ ...npm, password: e.target.value })}
                 />
               </label>
             </div>
+            {npm.url.trim().toLowerCase().startsWith('https') && (
+              <label className="inline">
+                <input
+                  type="checkbox"
+                  checked={npm.insecure_tls}
+                  onChange={(e) =>
+                    setNpm({ ...npm, insecure_tls: e.target.checked })
+                  }
+                />
+                NPM uses a self-signed certificate (skip the check)
+              </label>
+            )}
             <div className="actions">
               <button disabled={busy}>
-                {busy ? 'Reading…' : 'Preview import'}
+                {busy ? 'Connecting…' : 'Connect and preview'}
+              </button>
+              <button
+                type="button"
+                className="link"
+                onClick={() => setSource('file')}
+              >
+                Can’t reach NPM? Use its database instead
               </button>
             </div>
             <p className="hint">
-              CPM must be able to reach the database from its container. The
-              password is used once and not stored.
+              Use an NPM admin account so every host is visible. The password is
+              used once to read NPM and isn’t stored.
             </p>
           </form>
+        ) : (
+          <>
+            <div className="segmented">
+              <label>
+                <input
+                  type="radio"
+                  checked={source === 'file'}
+                  onChange={() => setSource('file')}
+                />
+                SQLite file (default NPM install)
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  checked={source === 'mysql'}
+                  onChange={() => setSource('mysql')}
+                />
+                MySQL / MariaDB
+              </label>
+              <button
+                type="button"
+                className="link"
+                onClick={() => setSource('api')}
+              >
+                Back to connecting to NPM
+              </button>
+            </div>
+            {source === 'file' ? (
+              <div className="stack-tight">
+                <p className="hint">
+                  Copy <code>/data/database.sqlite</code> out of the NPM
+                  container, e.g.{' '}
+                  <code>docker cp npm:/data/database.sqlite .</code>
+                </p>
+                <label className="button secondary file-button">
+                  {busy ? 'Reading…' : 'Choose database.sqlite…'}
+                  <input
+                    type="file"
+                    accept=".sqlite,.db"
+                    onChange={(e) => fromFile(e.target.files?.[0])}
+                  />
+                </label>
+              </div>
+            ) : (
+              <form className="folder-form" onSubmit={fromMySQL}>
+                <div className="actions">
+                  <label className="grow">
+                    Host
+                    <input
+                      required
+                      value={mysql.host}
+                      onChange={(e) =>
+                        setMysql({ ...mysql, host: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Port
+                    <input
+                      type="number"
+                      value={mysql.port}
+                      onChange={(e) =>
+                        setMysql({ ...mysql, port: Number(e.target.value) })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="actions">
+                  <label className="grow">
+                    User
+                    <input
+                      required
+                      value={mysql.user}
+                      onChange={(e) =>
+                        setMysql({ ...mysql, user: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="grow">
+                    Password
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={mysql.password}
+                      onChange={(e) =>
+                        setMysql({ ...mysql, password: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label className="grow">
+                    Database
+                    <input
+                      required
+                      value={mysql.database}
+                      onChange={(e) =>
+                        setMysql({ ...mysql, database: e.target.value })
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="actions">
+                  <button disabled={busy}>
+                    {busy ? 'Reading…' : 'Preview import'}
+                  </button>
+                </div>
+                <p className="hint">
+                  CPM must be able to reach the database from its container. The
+                  password is used once and not stored.
+                </p>
+              </form>
+            )}
+          </>
         )}
         {error && (
           <p className="error" role="alert">

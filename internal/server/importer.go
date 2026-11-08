@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"io"
 	"mime"
@@ -57,13 +56,14 @@ func (p *pendingImports) take(id, user string) (npmimport.Plan, bool) {
 	return e.plan, true
 }
 
-// handleImportPreview reads an NPM database and shows what an import would
-// do. Send the NPM database.sqlite file as the body
-// (Content-Type: application/vnd.sqlite3), or JSON {"mysql": {...}}.
+// handleImportPreview reads NPM's records and shows what an import would
+// do. Send JSON {"api": {url, email, password}} to read a running NPM
+// through its API, JSON {"mysql": {...}} for a MySQL database, or the NPM
+// database.sqlite file as the body (Content-Type: application/vnd.sqlite3).
 func (s *srv) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	var db *sql.DB
+	var src npmimport.Source
 	mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	switch mt {
 	case "application/vnd.sqlite3", "application/octet-stream":
@@ -79,28 +79,45 @@ func (s *srv) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "bad_request", "Upload failed or the file is too large.")
 			return
 		}
-		if db, err = npmimport.OpenSQLite(tmp.Name()); err != nil {
+		db, err := npmimport.OpenSQLite(tmp.Name())
+		if err != nil {
 			s.internalError(w, err)
 			return
 		}
+		defer func() { _ = db.Close() }()
+		src = npmimport.FromDB(db)
 	case "application/json":
 		var req struct {
-			MySQL npmimport.MySQLConfig `json:"mysql"`
+			API   *npmimport.APIConfig   `json:"api"`
+			MySQL *npmimport.MySQLConfig `json:"mysql"`
 		}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&req); err != nil {
 			writeError(w, http.StatusBadRequest, "bad_request", "Invalid JSON body.")
 			return
 		}
-		var err error
-		if db, err = npmimport.OpenMySQL(req.MySQL); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+		switch {
+		case req.API != nil:
+			var err error
+			if src, err = npmimport.FetchAPI(ctx, *req.API); err != nil {
+				writeError(w, http.StatusBadRequest, "import_failed", sentence(err.Error()))
+				return
+			}
+		case req.MySQL != nil:
+			db, err := npmimport.OpenMySQL(*req.MySQL)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "bad_request", err.Error())
+				return
+			}
+			defer func() { _ = db.Close() }()
+			src = npmimport.FromDB(db)
+		default:
+			writeError(w, http.StatusBadRequest, "bad_request", "Send NPM's address and admin login, or MySQL connection details.")
 			return
 		}
 	default:
-		writeError(w, http.StatusUnsupportedMediaType, "bad_request", "Upload NPM's database.sqlite, or send MySQL connection details as JSON.")
+		writeError(w, http.StatusUnsupportedMediaType, "bad_request", "Connect to NPM, upload its database.sqlite, or send MySQL connection details.")
 		return
 	}
-	defer func() { _ = db.Close() }()
 
 	opts := npmimport.Options{ExistingDomains: map[string]bool{}}
 	hosts, err := s.store.ListHosts(ctx)
@@ -115,7 +132,7 @@ func (s *srv) handleImportPreview(w http.ResponseWriter, r *http.Request) {
 	if providers, err := s.store.ListDNSProviders(ctx); err == nil && len(providers) > 0 {
 		opts.DNSProviderID = providers[0].ID
 	}
-	plan, err := npmimport.Build(ctx, db, opts)
+	plan, err := npmimport.Build(ctx, src, opts)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "import_failed", err.Error())
 		return
@@ -160,4 +177,12 @@ func randomID() (string, error) {
 		out[i*2], out[i*2+1] = hex[v>>4], hex[v&15]
 	}
 	return string(out), nil
+}
+
+// sentence capitalizes an error message for display.
+func sentence(msg string) string {
+	if msg == "" {
+		return msg
+	}
+	return strings.ToUpper(msg[:1]) + msg[1:] + "."
 }

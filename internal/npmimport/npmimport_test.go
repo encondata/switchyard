@@ -77,7 +77,7 @@ func TestBuildAndApply(t *testing.T) {
 	ctx := context.Background()
 	db := fixture(t)
 
-	p, err := Build(ctx, db, Options{ExistingDomains: map[string]bool{"taken.example.com": true}})
+	p, err := Build(ctx, FromDB(db), Options{ExistingDomains: map[string]bool{"taken.example.com": true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestBuildAndApply(t *testing.T) {
 	}
 
 	// With a DNS provider, the wildcard host uses the DNS challenge.
-	p2, _ := Build(ctx, db, Options{DNSProviderID: 9})
+	p2, _ := Build(ctx, FromDB(db), Options{DNSProviderID: 9})
 	if h := find(p2, "proxy_host #2").Host; h.TLSMode != store.TLSDNS || h.DNSProviderID == nil || *h.DNSProviderID != 9 {
 		t.Fatalf("dns host = %+v", h)
 	}
@@ -163,7 +163,7 @@ func TestBuildAndApply(t *testing.T) {
 func TestNotNPM(t *testing.T) {
 	db, _ := sql.Open("sqlite", "file:"+filepath.Join(t.TempDir(), "x.db"))
 	defer func() { _ = db.Close() }()
-	if _, err := Build(context.Background(), db, Options{}); err == nil {
+	if _, err := Build(context.Background(), FromDB(db), Options{}); err == nil {
 		t.Fatal("expected an error for a non-NPM database")
 	}
 }

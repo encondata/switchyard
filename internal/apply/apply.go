@@ -59,10 +59,10 @@ type Preview struct {
 	Diff string `json:"diff"`
 	// Drift is true when Caddy's running config isn't the last one CPM
 	// applied (someone changed Caddy directly, or Caddy restarted without it).
-	Drift         bool                 `json:"drift"`
-	CaddyError    string               `json:"caddy_error,omitempty"`
+	Drift      bool   `json:"drift"`
+	CaddyError string `json:"caddy_error,omitempty"`
 	// Changes counts edits saved since the last successful apply.
-	Changes int `json:"changes"`
+	Changes       int                  `json:"changes"`
 	LastApplied   *store.ConfigVersion `json:"last_applied,omitempty"`
 	CandidateHash string               `json:"candidate_sha256"`
 }

@@ -312,6 +312,14 @@ export type ImportResult = {
   skipped: string[]
 }
 
+/** A running NPM's admin address and login (used once, not stored). */
+export type NPMConnection = {
+  url: string
+  email: string
+  password: string
+  insecure_tls: boolean
+}
+
 export type MySQLConfig = {
   host: string
   port: number
@@ -678,6 +686,12 @@ export const api = {
       )
     return data as { plan_id: string; plan: ImportPlan }
   },
+  importPreviewAPI: (api: NPMConnection) =>
+    request<{ plan_id: string; plan: ImportPlan }>(
+      'POST',
+      '/api/import/npm/preview',
+      { api },
+    ),
   importPreviewMySQL: (mysql: MySQLConfig) =>
     request<{ plan_id: string; plan: ImportPlan }>(
       'POST',

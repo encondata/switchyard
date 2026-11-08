@@ -1,5 +1,5 @@
-// Package npmimport reads an Nginx Proxy Manager database (SQLite or
-// MySQL) and turns its hosts and access lists into CPM hosts and policies
+// Package npmimport reads an Nginx Proxy Manager install (through its API,
+// or its SQLite or MySQL database) and turns its hosts and access lists into CPM hosts and policies
 // (spec F7, CPM-20). Imported hosts go into an "Imported" folder, disabled
 // until someone reviews them. Anything CPM can't convert is reported.
 package npmimport
@@ -112,6 +112,9 @@ func (r row) str(k string) string {
 		return string(v)
 	case string:
 		return v
+	case []any, map[string]any:
+		b, _ := json.Marshal(v) // API values; the DB stores these as JSON text
+		return string(b)
 	default:
 		return fmt.Sprint(v)
 	}
@@ -136,6 +139,29 @@ func (r row) meta() map[string]any {
 	m := map[string]any{}
 	_ = json.Unmarshal([]byte(r.str("meta")), &m)
 	return m
+}
+
+// Source is where NPM's records come from: its database or its API. Table
+// returns the live (not deleted) rows of an NPM table, fields by name.
+type Source interface {
+	Ping(ctx context.Context) error
+	Table(ctx context.Context, name string) ([]row, error)
+}
+
+// FromDB reads records straight from NPM's database.
+func FromDB(db *sql.DB) Source { return dbSource{db} }
+
+type dbSource struct{ db *sql.DB }
+
+func (d dbSource) Ping(ctx context.Context) error {
+	if err := d.db.PingContext(ctx); err != nil {
+		return fmt.Errorf("can't open the NPM database: %w", err)
+	}
+	return nil
+}
+
+func (d dbSource) Table(ctx context.Context, name string) ([]row, error) {
+	return readTable(ctx, d.db, name)
 }
 
 func readTable(ctx context.Context, db *sql.DB, table string) ([]row, error) {
@@ -180,18 +206,18 @@ type Options struct {
 	ExistingDomains map[string]bool
 }
 
-// Build reads the NPM database and works out the import.
-func Build(ctx context.Context, db *sql.DB, opts Options) (Plan, error) {
+// Build reads NPM's records and works out the import.
+func Build(ctx context.Context, src Source, opts Options) (Plan, error) {
 	p := Plan{Hosts: []PlannedHost{}, Policies: []PlannedPolicy{}, Streams: []Stream{}, Warnings: []string{}}
-	if err := db.PingContext(ctx); err != nil {
-		return p, fmt.Errorf("can't open the NPM database: %w", err)
+	if err := src.Ping(ctx); err != nil {
+		return p, err
 	}
-	if _, err := readTable(ctx, db, "proxy_host"); err != nil {
+	if _, err := src.Table(ctx, "proxy_host"); err != nil {
 		return p, fmt.Errorf("this doesn't look like an NPM database (no proxy_host table): %w", err)
 	}
 
 	certs := map[int64]row{}
-	if rows, err := readTable(ctx, db, "certificate"); err == nil {
+	if rows, err := src.Table(ctx, "certificate"); err == nil {
 		for _, r := range rows {
 			certs[r.int("id")] = r
 		}
@@ -199,9 +225,9 @@ func Build(ctx context.Context, db *sql.DB, opts Options) (Plan, error) {
 
 	// Access lists → policies.
 	listPolicies := map[int64][]string{}
-	if lists, err := readTable(ctx, db, "access_list"); err == nil {
-		clients, _ := readTable(ctx, db, "access_list_client")
-		auths, _ := readTable(ctx, db, "access_list_auth")
+	if lists, err := src.Table(ctx, "access_list"); err == nil {
+		clients, _ := src.Table(ctx, "access_list_client")
+		auths, _ := src.Table(ctx, "access_list_auth")
 		for _, l := range lists {
 			id := l.int("id")
 			var allow, deny []string
@@ -255,7 +281,7 @@ func Build(ctx context.Context, db *sql.DB, opts Options) (Plan, error) {
 	}
 
 	add := func(table, kind string, conv func(row, *PlannedHost)) error {
-		rows, err := readTable(ctx, db, table)
+		rows, err := src.Table(ctx, table)
 		if err != nil {
 			if table == "proxy_host" {
 				return err
@@ -342,7 +368,7 @@ func Build(ctx context.Context, db *sql.DB, opts Options) (Plan, error) {
 	})
 	_ = add("dead_host", store.Host404, func(row, *PlannedHost) {})
 
-	if streams, err := readTable(ctx, db, "stream"); err == nil {
+	if streams, err := src.Table(ctx, "stream"); err == nil {
 		for _, s := range streams {
 			var protos []string
 			if s.bool("tcp_forwarding") {
