@@ -143,6 +143,9 @@ func (s *srv) handleAddNeverBan(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, err) {
 		return
 	}
+	if s.unifi != nil {
+		s.unifi.Trigger() // the firewall list must stop blocking it
+	}
 	writeJSON(w, http.StatusCreated, nb)
 }
 
@@ -150,6 +153,9 @@ func (s *srv) handleAddNeverBan(w http.ResponseWriter, r *http.Request) {
 func (s *srv) handleDeleteNeverBan(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, s.store.DeleteNeverBan(r.Context(), r.URL.Query().Get("cidr"), userFrom(r).Username)) {
 		return
+	}
+	if s.unifi != nil {
+		s.unifi.Trigger()
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

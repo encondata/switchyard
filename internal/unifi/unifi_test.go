@@ -258,3 +258,60 @@ func TestSync(t *testing.T) {
 		t.Errorf("wrong key: %v / %q", err, s.Status().LastError)
 	}
 }
+
+func TestExempt(t *testing.T) {
+	got := Exempt(
+		[]string{"198.51.100.0/24", "203.0.113.9", "203.0.113.10", "192.0.2.0/30", "2001:db8::/126", "bad"},
+		[]string{"198.51.100.9", "203.0.113.9/32", "192.0.2.0/24", "2001:db8::2"},
+	)
+	// 198.51.100.0/24 minus .9 is split into eight prefixes covering
+	// every other address; .9 itself must be absent.
+	joined := strings.Join(got, " ")
+	for _, want := range []string{"198.51.100.0/29", "198.51.100.8", "198.51.100.10/31", "198.51.100.12/30", "198.51.100.16/28",
+		"198.51.100.32/27", "198.51.100.64/26", "198.51.100.128/25", "203.0.113.10", "2001:db8::/127", "2001:db8::3"} {
+		if !strings.Contains(" "+joined+" ", " "+want+" ") {
+			t.Errorf("missing %s in %v", want, got)
+		}
+	}
+	for _, gone := range []string{"198.51.100.9", "203.0.113.9", "192.0.2.", "2001:db8::2"} {
+		if strings.Contains(" "+joined, " "+gone) {
+			t.Errorf("exempt %s still banned: %v", gone, got)
+		}
+	}
+	if len(got) != 11 {
+		t.Errorf("got %d ranges: %v", len(got), got)
+	}
+}
+
+// A never-block address inside a banned range must not be blocked at the
+// firewall (Caddy lets it through).
+func TestSyncRespectsNeverBlock(t *testing.T) {
+	f, ts := newConsole(t)
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "cpm.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	box, _ := secrets.New(base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32))))
+	info, _ := FetchCert(ctx, ts.URL)
+	if _, err := st.SaveUniFi(ctx, store.UniFiSettings{Enabled: true, URL: ts.URL, SiteID: site, CertSHA256: info.SHA256}, f.key, box, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddBan(ctx, "198.51.100.0/30", "range", "manual", 0, 0, "admin"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.AddNeverBan(ctx, "198.51.100.1", "partner", "admin"); err != nil {
+		t.Fatal(err)
+	}
+	s := &Syncer{Store: st, Box: box, Log: slog.Default()}
+	if err := s.Sync(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, l := range f.lists {
+		got := fmt.Sprint(l.Items)
+		if got != "[{IP_ADDRESS 198.51.100.0} {SUBNET 198.51.100.2/31}]" {
+			t.Errorf("items = %s (198.51.100.1 must be left out)", got)
+		}
+	}
+}

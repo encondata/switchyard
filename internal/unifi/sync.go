@@ -161,7 +161,16 @@ func (s *Syncer) sync(ctx context.Context, settings store.UniFiSettings, force b
 	if err != nil {
 		return err
 	}
-	v4, v6 := Items(bans)
+	// Never-block wins in Caddy, so it must win at the firewall too.
+	never, err := s.Store.ListNeverBan(ctx)
+	if err != nil {
+		return err
+	}
+	exempt := make([]string, 0, len(never))
+	for _, n := range never {
+		exempt = append(exempt, n.CIDR)
+	}
+	v4, v6 := Items(Exempt(bans, exempt))
 	sent := settings.URL + "|" + settings.SiteID + "|" + settings.ListName + "|" + join(v4) + "|" + join(v6)
 	s.mu.Lock()
 	unchanged := sent == s.lastSent && time.Since(s.lastFull) < 30*time.Minute
