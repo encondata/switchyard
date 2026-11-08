@@ -97,7 +97,7 @@ func ParseLine(line []byte, geo *geoip.DB) (Hit, bool) {
 	case e.Blocked != "":
 		h.Matched, h.Reason = "blocked", e.Blocked
 	}
-	h.Country = geo.Country(h.ClientIP)
+	h.Country = geo.Locate(h.ClientIP)
 	return h, true
 }
 

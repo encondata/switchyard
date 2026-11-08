@@ -318,7 +318,7 @@ func TestCountryRules(t *testing.T) {
 	hosts := []store.Host{normalized(store.Host{
 		ID: 1, Type: store.Host404, Enabled: true, Domains: []string{"geo.localhost"}, TLSMode: store.TLSOff, PolicyIDs: []int64{1, 2},
 	})}
-	if _, err := Compile(settings, hosts, access); err == nil || !strings.Contains(err.Error(), "GeoLite2") {
+	if _, err := Compile(settings, hosts, access); err == nil || !strings.Contains(err.Error(), "no country database") {
 		t.Fatalf("country rules without a database err = %v", err)
 	}
 	st := settings

@@ -81,6 +81,8 @@ func (s *srv) handleStatsOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"overview": o, "latency": lat,
 		"previous": map[string]int64{"requests": prev.Requests, "errors": prev.Errors, "blocked": prev.Blocked},
+		// Who the countries come from; DB-IP's free data must be credited.
+		"geo_source": s.geo.Source(),
 	})
 }
 

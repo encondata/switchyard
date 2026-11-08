@@ -1,5 +1,7 @@
-// Package geoip looks up the country of an IP address in a MaxMind
-// GeoLite2-Country database (spec F4, F5) and knows the ISO country codes.
+// Package geoip looks up the country of an IP address (spec F4, F5) in a
+// MaxMind GeoLite2-Country database if one is installed, or else in DB-IP's
+// free IP-to-Country Lite database, which CPM downloads itself (see
+// Updater). It also knows the ISO country codes.
 package geoip
 
 import (
@@ -56,34 +58,72 @@ func ValidCountry(code string) bool {
 	return countrySet[strings.ToUpper(code)]
 }
 
-// DB reads a GeoLite2/GeoIP2 Country database, reopening it when the file
-// changes (geoipupdate replaces it weekly).
+// DB reads a country database, reopening it when the file changes
+// (geoipupdate and the DB-IP updater replace it in place). Path is the
+// MaxMind GeoLite2 file; Fallback, used when Path doesn't exist, is the
+// DB-IP file.
 type DB struct {
-	Path string
+	Path     string
+	Fallback string
 
 	mu     sync.Mutex
 	reader *maxminddb.Reader
+	path   string
 	mtime  time.Time
 	nextCh time.Time
 }
 
-// ModTime returns when the database file was last updated, or false if it
-// isn't there.
+// ActivePath is the database file in use, or "" if none is installed.
+func (d *DB) ActivePath() string {
+	if d == nil {
+		return ""
+	}
+	for _, p := range []string{d.Path, d.Fallback} {
+		if p == "" {
+			continue
+		}
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
+
+// ModTime returns when the database file in use was last updated, or false
+// if none is installed.
 func (d *DB) ModTime() (time.Time, bool) {
-	if d == nil || d.Path == "" {
+	p := d.ActivePath()
+	if p == "" {
 		return time.Time{}, false
 	}
-	info, err := os.Stat(d.Path)
+	info, err := os.Stat(p)
 	if err != nil {
 		return time.Time{}, false
 	}
 	return info.ModTime(), true
 }
 
-// Available reports whether the database file exists.
+// Available reports whether a database file exists.
 func (d *DB) Available() bool {
-	_, ok := d.ModTime()
-	return ok
+	return d.ActivePath() != ""
+}
+
+// Source names who made the database in use ("DB-IP" or "MaxMind"), or ""
+// if none is installed. DB-IP's free data must be credited where shown.
+func (d *DB) Source() string {
+	if d == nil {
+		return ""
+	}
+	d.mu.Lock()
+	r := d.open()
+	d.mu.Unlock()
+	if r == nil {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToUpper(r.Metadata.DatabaseType), "DBIP") {
+		return "DB-IP"
+	}
+	return "MaxMind"
 }
 
 func (d *DB) open() *maxminddb.Reader {
@@ -92,27 +132,50 @@ func (d *DB) open() *maxminddb.Reader {
 		return d.reader
 	}
 	d.nextCh = now.Add(time.Minute)
-	mt, ok := d.ModTime()
-	if !ok {
+	p := d.ActivePath()
+	if p == "" {
 		return d.reader
 	}
-	if d.reader != nil && mt.Equal(d.mtime) {
+	info, err := os.Stat(p)
+	if err != nil {
 		return d.reader
 	}
-	r, err := maxminddb.Open(d.Path)
+	if d.reader != nil && p == d.path && info.ModTime().Equal(d.mtime) {
+		return d.reader
+	}
+	r, err := maxminddb.Open(p)
 	if err != nil {
 		return d.reader
 	}
 	if d.reader != nil {
 		_ = d.reader.Close()
 	}
-	d.reader, d.mtime = r, mt
+	d.reader, d.path, d.mtime = r, p, info.ModTime()
 	return r
 }
 
+// LocalNetwork is the "country" of private, loopback and other non-public
+// addresses, which no database can place.
+const LocalNetwork = "LAN"
+
+// Locate is Country, except that private and other non-public addresses
+// give LocalNetwork instead of "". It's what traffic stats record.
+func (d *DB) Locate(ip string) string {
+	if addr, err := netip.ParseAddr(ip); err == nil {
+		a := addr.Unmap()
+		if a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsUnspecified() || cgnat.Contains(a) {
+			return LocalNetwork
+		}
+	}
+	return d.Country(ip)
+}
+
+// cgnat is carrier-grade NAT space (RFC 6598), also never public.
+var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+
 // Country returns the ISO code for ip, or "" if unknown.
 func (d *DB) Country(ip string) string {
-	if d == nil || d.Path == "" {
+	if d == nil {
 		return ""
 	}
 	addr, err := netip.ParseAddr(ip)

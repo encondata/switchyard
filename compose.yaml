@@ -64,6 +64,8 @@ services:
       # Optional: ACME directory (e.g. Let's Encrypt staging) and contact email.
       CPM_ACME_CA: ${CPM_ACME_CA:-}
       CPM_ACME_EMAIL: ${CPM_ACME_EMAIL:-}
+      # Countries: DB-IP's free database is downloaded monthly unless "off".
+      CPM_GEOIP_DOWNLOAD: ${CPM_GEOIP_DOWNLOAD:-on}
     volumes:
       - cpm-data:/data
       - caddy-applied:/caddy-applied

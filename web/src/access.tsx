@@ -128,8 +128,9 @@ function PolicyForm({
           ))}
         </select>
         <span className="hint">
-          Country rules need the GeoLite2 database (see Health). Countries come
-          from the visitor’s IP address, so VPNs can hide the real one.
+          Country rules need a country database, which Switchyard downloads by
+          itself (see Health). Countries come from the visitor’s IP address, so
+          VPNs can hide the real one.
         </span>
       </label>
       <label>

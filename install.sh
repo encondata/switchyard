@@ -109,8 +109,9 @@ if [ ! -f .env ]; then
     printf "# Optional: Let's Encrypt staging while testing, and a contact email.\n"
     printf '# CPM_ACME_CA=https://acme-staging-v02.api.letsencrypt.org/directory\n'
     printf '# CPM_ACME_EMAIL=ops@example.com\n\n'
-    printf '# Optional: GeoLite2 country data (free MaxMind account). Set both, then\n'
-    printf '# run this installer again to start the geoip updater.\n'
+    printf '# Countries work out of the box (free DB-IP data, downloaded monthly).\n'
+    printf '# Optional: MaxMind GeoLite2 instead (free account). Set both, then run\n'
+    printf '# this installer again to start the geoip updater.\n'
     printf '# GEOIPUPDATE_ACCOUNT_ID=\n'
     printf '# GEOIPUPDATE_LICENSE_KEY=\n'
   } > .env)

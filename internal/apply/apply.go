@@ -43,6 +43,9 @@ type Service struct {
 	// for Caddy (see compiler.Settings.SecretsDir).
 	Box        *secrets.Box
 	SecretsDir string
+	// CaddyFallbackGeoIPDB is the DB-IP file's path as Caddy sees it, used
+	// when MaxMind's file (Settings.GeoIPDB) isn't installed.
+	CaddyFallbackGeoIPDB string
 	// GeoIP is the country database as CPM sees it; country rules compile
 	// only when it exists.
 	GeoIP *geoip.DB
@@ -79,6 +82,10 @@ func (s *Service) Build(ctx context.Context) ([]byte, error) {
 	}
 	settings := s.Settings
 	settings.GeoIPReady = s.GeoIP.Available()
+	// Without MaxMind's file, Caddy uses the DB-IP one CPM downloads.
+	if p := s.GeoIP.ActivePath(); p != "" && p == s.GeoIP.Fallback && s.CaddyFallbackGeoIPDB != "" {
+		settings.GeoIPDB = s.CaddyFallbackGeoIPDB
+	}
 	return compiler.Compile(settings, hosts, access)
 }
 

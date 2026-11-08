@@ -2056,3 +2056,13 @@ details summary {
     transform: translateY(8px);
   }
 }
+
+/* Attribution required by DB-IP's free licence (CC BY 4.0). */
+.credit {
+  margin: auto 0 0;
+  font-size: 0.78rem;
+}
+
+.credit a {
+  color: var(--muted);
+}

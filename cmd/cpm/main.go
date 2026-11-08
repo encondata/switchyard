@@ -104,7 +104,16 @@ func main() {
 		logger.Warn("CPM_SECRET_KEY is not set; DNS provider tokens can't be stored")
 	}
 	secretsDir := envOr("CPM_SECRETS_DIR", "/run/cpm-secrets")
-	geo := &geoip.DB{Path: envOr("CPM_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb")}
+	// Countries: MaxMind GeoLite2 if installed (geoipupdate), otherwise
+	// DB-IP's free database, which CPM downloads next to the config it
+	// writes for Caddy, so Caddy can read it for country rules too.
+	geoDownloadDir := *dataDir
+	if f := os.Getenv("CPM_CADDY_CONFIG_FILE"); f != "" {
+		geoDownloadDir = filepath.Dir(f)
+	}
+	geoUpdater := &geoip.Updater{Dir: envOr("CPM_GEOIP_DOWNLOAD_DIR", geoDownloadDir),
+		MaxMindPath: envOr("CPM_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb"), Log: logger}
+	geo := &geoip.DB{Path: geoUpdater.MaxMindPath, Fallback: geoUpdater.Path()}
 	applier := &apply.Service{
 		Store: st,
 		Caddy: caddyAPI,
@@ -118,10 +127,13 @@ func main() {
 			GeoIPDB:          envOr("CPM_CADDY_GEOIP_DB", "/usr/share/GeoIP/GeoLite2-Country.mmdb"),
 			AccessLogFile:    envOr("CPM_CADDY_ACCESS_LOG", "/var/log/caddy/access.log"),
 		},
-		GeoIP:      geo,
-		ConfigFile: os.Getenv("CPM_CADDY_CONFIG_FILE"),
-		Box:        box,
-		SecretsDir: secretsDir,
+		GeoIP: geo,
+		// Where Caddy sees the DB-IP file (CPM's config folder, mounted at
+		// /etc/caddy/cpm in the Caddy container).
+		CaddyFallbackGeoIPDB: envOr("CPM_CADDY_DBIP_DB", "/etc/caddy/cpm/"+geoip.DBIPFile),
+		ConfigFile:           os.Getenv("CPM_CADDY_CONFIG_FILE"),
+		Box:                  box,
+		SecretsDir:           secretsDir,
 	}
 	// Caddy may restart with a config that reads token files; make sure
 	// they exist.
@@ -145,6 +157,23 @@ func main() {
 		OnHits:     scorer.HandleHits,
 	}
 	go ingester.Run(ctx)
+	// Requests logged before a country database was there get their
+	// country once one is (at start, and after each download).
+	fillCountries := func() {
+		if !geo.Available() {
+			return
+		}
+		if n, err := hitsDB.FillCountries(ctx, geo.Locate); err != nil {
+			logger.Warn("filling in countries", "err", err)
+		} else if n > 0 {
+			logger.Info("filled in countries for earlier requests", "requests", n)
+		}
+	}
+	if os.Getenv("CPM_GEOIP_DOWNLOAD") != "off" {
+		geoUpdater.OnUpdate = fillCountries
+		go geoUpdater.Run(ctx)
+	}
+	go fillCountries()
 	if caddy != nil {
 		go scorer.Maintain(ctx)
 	}

@@ -42,7 +42,7 @@ func (s *srv) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	geo := map[string]any{"installed": false}
 	if mt, ok := s.geo.ModTime(); ok {
-		geo = map[string]any{"installed": true, "updated_at": mt.UTC(), "age_days": int(time.Since(mt).Hours() / 24)}
+		geo = map[string]any{"installed": true, "updated_at": mt.UTC(), "age_days": int(time.Since(mt).Hours() / 24), "source": s.geo.Source()}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"version":       s.version,

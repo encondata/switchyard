@@ -11,7 +11,12 @@ import (
 
 // Write creates a GeoIP2-Country-style database mapping CIDRs to ISO codes.
 func Write(path string, networks map[string]string) error {
-	w, err := mmdbwriter.New(mmdbwriter.Options{DatabaseType: "GeoIP2-Country", RecordSize: 24, IncludeReservedNetworks: true})
+	return WriteType(path, "GeoIP2-Country", networks)
+}
+
+// WriteType is Write with the database type set, e.g. "DBIP-Country-Lite".
+func WriteType(path, dbType string, networks map[string]string) error {
+	w, err := mmdbwriter.New(mmdbwriter.Options{DatabaseType: dbType, RecordSize: 24, IncludeReservedNetworks: true})
 	if err != nil {
 		return err
 	}

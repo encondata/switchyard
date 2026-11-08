@@ -27,7 +27,7 @@ Work tracking: Harbor Master project `CPM`.
 - **Folders:** nested, drag-and-drop; folders pass access policies, a DNS
   provider, default headers and a rate limit down to their hosts.
 - **Access control:** allow-only / deny policies by IP, CIDR or country
-  (GeoLite2), a never-block list that overrides everything, bans, optional
+  (free DB-IP data, downloaded automatically; MaxMind GeoLite2 optional), a never-block list that overrides everything, bans, optional
   CrowdSec community block lists.
 - **Dashboard:** traffic over time, bandwidth, error and blocked share,
   response times, top IPs / countries / paths / status codes / hosts, IP
@@ -68,7 +68,7 @@ Optional extras:
 
 ```bash
 docker compose --profile demo up -d    # a "whoami" test backend
-docker compose --profile geoip up -d   # GeoLite2 updates (needs a MaxMind key in .env)
+docker compose --profile geoip up -d   # optional: MaxMind GeoLite2 instead of DB-IP (needs a MaxMind key in .env)
 ```
 
 ### Try it
@@ -94,7 +94,8 @@ docker compose --profile geoip up -d   # GeoLite2 updates (needs a MaxMind key i
 | `CPM_ACME_EMAIL` | — | ACME account contact |
 | `CPM_ACME_CA_ROOTS` | — | Extra CA roots for the ACME server (tests) |
 | `CPM_HIT_RETENTION_DAYS` | `45` | How long raw traffic (with IPs) is kept |
-| `GEOIPUPDATE_ACCOUNT_ID` / `GEOIPUPDATE_LICENSE_KEY` | — | MaxMind GeoLite2 (country rules, dashboard countries) |
+| `GEOIPUPDATE_ACCOUNT_ID` / `GEOIPUPDATE_LICENSE_KEY` | — | Optional: MaxMind GeoLite2, used instead of the built-in DB-IP country data |
+| `CPM_GEOIP_DOWNLOAD` | on | `off` stops CPM downloading DB-IP's free country database (monthly, from download.db-ip.com) |
 
 The container paths (`CPM_CADDY_ADMIN_SOCKET`, `CPM_SECRETS_DIR`,
 `CPM_CADDY_DATA_DIR`, log files, GeoIP path) are set in `compose.yaml`.

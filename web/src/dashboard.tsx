@@ -57,6 +57,7 @@ function pct(part: number, whole: number, digits = 1): string {
 
 /** Emoji flag from an ISO country code. */
 function flag(code: string): string {
+  if (code === 'LAN') return '🏠'
   if (!/^[A-Z]{2}$/.test(code)) return '🌐'
   return String.fromCodePoint(
     ...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65),
@@ -440,9 +441,11 @@ function TopTable({
 function Countries({
   rows,
   names,
+  source,
 }: {
   rows: TopRow[] | null
   names: Map<string, string>
+  source?: string
 }) {
   const total = (rows ?? []).reduce((a, r) => a + r.count, 0)
   const max = Math.max(1, ...(rows ?? []).map((r) => r.count))
@@ -492,6 +495,13 @@ function Countries({
             ))}
           </tbody>
         </table>
+      )}
+      {source === 'DB-IP' && (
+        <p className="credit">
+          <a href="https://db-ip.com" target="_blank" rel="noreferrer">
+            IP Geolocation by DB-IP
+          </a>
+        </p>
       )}
     </div>
   )
@@ -836,9 +846,15 @@ export function Dashboard({
   const [hosts, setHosts] = useState<HostView[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
   const [certs, setCerts] = useState<CertRow[] | null>(null)
-  const [names, setNames] = useState(new Map<string, string>())
+  const [names, setNames] = useState(
+    new Map<string, string>([['LAN', 'Local network']]),
+  )
   const [ov, setOv] = useState<
-    (StatsOverview & { previous?: { requests: number; errors: number } }) | null
+    | (StatsOverview & {
+        previous?: { requests: number; errors: number }
+        geo_source?: string
+      })
+    | null
   >(null)
   const [top, setTop] = useState<Record<string, TopRow[] | null>>({})
   const [error, setError] = useState<string | null>(null)
@@ -869,7 +885,12 @@ export function Dashboard({
     api
       .countries()
       .then((cs: Country[]) =>
-        setNames(new Map(cs.map((c) => [c.code, c.name]))),
+        setNames(
+          new Map([
+            ['LAN', 'Local network'],
+            ...cs.map((c): [string, string] => [c.code, c.name]),
+          ]),
+        ),
       )
       .catch(() => undefined)
   }, [])
@@ -1059,7 +1080,11 @@ export function Dashboard({
           rows={top.host ?? null}
           icon={() => Globe}
         />
-        <Countries rows={top.country ?? null} names={names} />
+        <Countries
+          rows={top.country ?? null}
+          names={names}
+          source={ov?.geo_source}
+        />
         <TopTable
           title="Top paths"
           keyLabel="Path"

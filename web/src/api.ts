@@ -283,7 +283,12 @@ export type Health = {
   alerts: Alert[]
   db_bytes: number
   secrets_ready: boolean
-  geoip: { installed: boolean; updated_at?: string; age_days?: number }
+  geoip: {
+    installed: boolean
+    updated_at?: string
+    age_days?: number
+    source?: 'DB-IP' | 'MaxMind' | ''
+  }
 }
 
 export type ImportPlan = {

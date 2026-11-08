@@ -642,7 +642,7 @@ func accessRoutes(h store.Host, access store.AccessState, s Settings) ([]any, er
 	}
 	countryMatcher := func(codes []string) (obj, error) {
 		if s.GeoIPDB == "" || !s.GeoIPReady {
-			return nil, fmt.Errorf("host %d (%s) has country rules, but the GeoLite2 database isn't installed (see the GeoIP section of the README)",
+			return nil, fmt.Errorf("host %d (%s) has country rules, but no country database is installed yet (Switchyard downloads one on start; check the health page)",
 				h.ID, strings.Join(h.Domains, ", "))
 		}
 		return obj{"maxmind_geolocation": obj{"db_path": s.GeoIPDB, "allow_countries": codes}}, nil

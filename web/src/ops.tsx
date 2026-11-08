@@ -256,15 +256,32 @@ export function HealthPage({ isAdmin }: { isAdmin: boolean }) {
             <dt>GeoIP database</dt>
             <dd>
               {h.geoip.installed ? (
-                <span className={(h.geoip.age_days ?? 0) > 14 ? 'bad' : 'ok'}>
-                  Updated {h.geoip.age_days} day(s) ago
-                  {(h.geoip.age_days ?? 0) > 14 &&
-                    ' — check the geoipupdate container'}
-                </span>
+                (() => {
+                  // DB-IP publishes monthly, MaxMind weekly.
+                  const dbip = h.geoip.source === 'DB-IP'
+                  const stale = (h.geoip.age_days ?? 0) > (dbip ? 45 : 14)
+                  return (
+                    <span className={stale ? 'bad' : 'ok'}>
+                      {dbip ? (
+                        <>
+                          DB-IP IP to Country Lite (free, downloaded
+                          automatically)
+                        </>
+                      ) : (
+                        'MaxMind GeoLite2'
+                      )}
+                      , updated {h.geoip.age_days} day(s) ago
+                      {stale &&
+                        (dbip
+                          ? ' — Switchyard couldn’t download a newer one; check it can reach download.db-ip.com'
+                          : ' — check the geoipupdate container')}
+                    </span>
+                  )
+                })()
               ) : (
                 <span className="hint">
-                  Not installed. Country rules and dashboard countries need a
-                  free MaxMind key (see .env.example).
+                  Not installed yet. Switchyard downloads DB-IP’s free country
+                  database on start; it needs to reach download.db-ip.com.
                 </span>
               )}
             </dd>
