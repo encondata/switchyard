@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 type client struct {

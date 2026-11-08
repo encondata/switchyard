@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/encondata/caddyproxymanager/internal/secrets"
-	"github.com/encondata/caddyproxymanager/internal/totp"
+	"github.com/encondata/switchyard/internal/secrets"
+	"github.com/encondata/switchyard/internal/totp"
 )
 
 // Roles (spec F7): admins manage everything including users and

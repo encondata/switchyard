@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/hits"
+	"github.com/encondata/switchyard/internal/hits"
 )
 
 var ranges = map[string]time.Duration{

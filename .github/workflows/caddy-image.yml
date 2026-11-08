@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: ghcr.io/${{ github.repository_owner }}/cpm-caddy
+  IMAGE: ghcr.io/${{ github.repository_owner }}/switchyard-caddy
 
 jobs:
   build:
@@ -35,14 +35,14 @@ jobs:
         with:
           context: caddy
           load: true
-          tags: cpm-caddy:test
+          tags: switchyard-caddy:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Check modules and serve a request
         run: |
-          docker run --rm cpm-caddy:test cpm-verify-modules
-          docker run -d --name caddy -p 8080:80 cpm-caddy:test
+          docker run --rm switchyard-caddy:test cpm-verify-modules
+          docker run -d --name caddy -p 8080:80 switchyard-caddy:test
           # The bootstrap config answers every host with a 404 page.
           for i in $(seq 1 20); do curl -sS -o /dev/null http://127.0.0.1:8080/ && break; sleep 0.5; done
           curl -sS http://127.0.0.1:8080/ | grep -q 'No site is configured'

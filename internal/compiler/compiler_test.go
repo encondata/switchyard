@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files in testdata/")

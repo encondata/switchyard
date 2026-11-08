@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/ratelimit"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/ratelimit"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 const (

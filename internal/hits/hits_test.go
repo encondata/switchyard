@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/geoip"
-	"github.com/encondata/caddyproxymanager/internal/geoip/geoiptest"
+	"github.com/encondata/switchyard/internal/geoip"
+	"github.com/encondata/switchyard/internal/geoip/geoiptest"
 )
 
 func openTest(t *testing.T) *DB {

@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // handleGetPrefs returns the signed-in user's display preferences.

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/encondata/caddyproxymanager/internal/geoip/geoiptest"
+	"github.com/encondata/switchyard/internal/geoip/geoiptest"
 )
 
 func TestCountries(t *testing.T) {

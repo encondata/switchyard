@@ -1,4 +1,4 @@
-module github.com/encondata/caddyproxymanager
+module github.com/encondata/switchyard
 
 go 1.27.3
 

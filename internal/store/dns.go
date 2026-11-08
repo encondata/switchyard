@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/secrets"
+	"github.com/encondata/switchyard/internal/secrets"
 )
 
 // DNSProvider holds credentials for DNS-01 challenges (spec F2, CPM-15).

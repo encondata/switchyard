@@ -22,4 +22,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/encondata/caddyproxymanager
+        - github.com/encondata/switchyard

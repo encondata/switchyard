@@ -20,9 +20,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/apply"
-	"github.com/encondata/caddyproxymanager/internal/certs"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/apply"
+	"github.com/encondata/switchyard/internal/certs"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // Notifier is told about new alerts. In-app alerts are stored by the

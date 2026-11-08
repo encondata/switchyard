@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/apply"
-	"github.com/encondata/caddyproxymanager/internal/compiler"
-	"github.com/encondata/caddyproxymanager/internal/secrets"
-	"github.com/encondata/caddyproxymanager/internal/store"
-	"github.com/encondata/caddyproxymanager/internal/totp"
+	"github.com/encondata/switchyard/internal/apply"
+	"github.com/encondata/switchyard/internal/compiler"
+	"github.com/encondata/switchyard/internal/secrets"
+	"github.com/encondata/switchyard/internal/store"
+	"github.com/encondata/switchyard/internal/totp"
 )
 
 // fullServer is a server with a secret key, signed in as an admin who has

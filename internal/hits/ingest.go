@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/geoip"
+	"github.com/encondata/switchyard/internal/geoip"
 )
 
 // Ingester tails Caddy's JSON access log and stores hits (CPM-22).

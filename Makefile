@@ -31,10 +31,10 @@ fmt:
 	golangci-lint fmt
 	cd web && npm run format
 
-## caddy: build the custom Caddy image (cpm-caddy:dev) and verify its modules
+## caddy: build the custom Caddy image (switchyard-caddy:dev) and verify its modules
 caddy:
-	docker build -t cpm-caddy:dev caddy/
-	docker run --rm cpm-caddy:dev cpm-verify-modules
+	docker build -t switchyard-caddy:dev caddy/
+	docker run --rm switchyard-caddy:dev cpm-verify-modules
 
 ## check: everything CI runs
 check: lint test

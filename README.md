@@ -1,7 +1,9 @@
-# CaddyProxyManager (CPM)
+<img src="web/public/favicon.svg" alt="" width="56" align="left">
+
+# Switchyard
 
 A web UI for running a Caddy reverse proxy, replacing Nginx Proxy Manager.
-CPM keeps hosts, certificates, folders and access rules in its own database
+Its manager (CPM, short for Caddy Proxy Manager) keeps hosts, certificates, folders and access rules in its own database
 and builds **one complete Caddy JSON config** from it, sent through Caddy's
 admin API. If Caddy rejects a config it keeps running the previous one, so
 one bad host never takes down the rest.
@@ -36,7 +38,21 @@ Work tracking: Harbor Master project `CPM`.
   sign-in (can be required), sign-in rate limits, audit log, alerts, health
   page, backup and restore, NPM importer.
 
-## Run it
+## Install
+
+On any machine with Docker and Docker Compose v2 (Linux, Unraid, macOS):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/encondata/switchyard/main/install.sh | bash
+```
+
+It asks where to install (`~/switchyard`, or `/mnt/user/appdata/switchyard`
+on Unraid), makes the encryption key, picks free ports if 80, 443 or 8080
+are taken (handy for testing next to Nginx Proxy Manager), builds and
+starts everything, and prints the address and first sign-in. Run it again
+to update; your settings and data are kept.
+
+## Run it by hand
 
 ```bash
 cp .env.example .env
@@ -103,7 +119,7 @@ The container paths (`CPM_CADDY_ADMIN_SOCKET`, `CPM_SECRETS_DIR`,
 `caddy/Dockerfile` builds Caddy with `xcaddy` from the pinned plugins in
 `caddy/modules.txt` (Cloudflare DNS, MaxMind geolocation, rate limiting,
 CrowdSec). The build fails if a listed plugin is missing from
-`caddy list-modules`. CI publishes it as `ghcr.io/encondata/cpm-caddy`
+`caddy list-modules`. CI publishes it as `ghcr.io/encondata/switchyard-caddy`
 (amd64 + arm64).
 
 ## Develop

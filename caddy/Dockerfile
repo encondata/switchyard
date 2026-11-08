@@ -1,5 +1,5 @@
 # CPM's custom Caddy build. Every version is pinned here or in modules.txt.
-# Build from the repo root:  docker build -t cpm-caddy caddy/
+# Build from the repo root:  docker build -t switchyard-caddy caddy/
 
 ARG GO_IMAGE=golang:1.27.3-alpine3.24@sha256:fa3d596898d9f126af7c01d14ee7597bab3f39cccf392ef36b69fe77cd681f18
 ARG CADDY_IMAGE=caddy:2.11.9-alpine@sha256:0bbb055bda6793c999bde78b1b5ce3e89f829fb031af2cf50056ea1246559fee
@@ -37,6 +37,6 @@ RUN apk add --no-cache libcap su-exec \
 ENTRYPOINT ["cpm-caddy-start"]
 CMD []
 
-LABEL org.opencontainers.image.title="cpm-caddy" \
-      org.opencontainers.image.description="Caddy built for CaddyProxyManager" \
-      org.opencontainers.image.source="https://github.com/encondata/caddyproxymanager"
+LABEL org.opencontainers.image.title="switchyard-caddy" \
+      org.opencontainers.image.description="Caddy built for Switchyard" \
+      org.opencontainers.image.source="https://github.com/encondata/switchyard"

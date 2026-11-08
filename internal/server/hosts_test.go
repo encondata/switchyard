@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/encondata/caddyproxymanager/internal/apply"
-	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
-	"github.com/encondata/caddyproxymanager/internal/compiler"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/apply"
+	"github.com/encondata/switchyard/internal/caddyadmin"
+	"github.com/encondata/switchyard/internal/compiler"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 type fakeCaddy struct {

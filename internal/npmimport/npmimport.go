@@ -17,7 +17,7 @@ import (
 	// MySQL driver for NPM installs that use MySQL/MariaDB.
 	"github.com/go-sql-driver/mysql"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // FolderName is where imported hosts go.

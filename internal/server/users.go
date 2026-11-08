@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
-	"github.com/encondata/caddyproxymanager/internal/totp"
+	"github.com/encondata/switchyard/internal/store"
+	"github.com/encondata/switchyard/internal/totp"
 )
 
 // --- the signed-in user's own two-factor settings ---

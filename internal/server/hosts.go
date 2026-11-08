@@ -7,9 +7,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
-	"github.com/encondata/caddyproxymanager/internal/certs"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/caddyadmin"
+	"github.com/encondata/switchyard/internal/certs"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // canEdit is true for roles that may change hosts and apply configs.

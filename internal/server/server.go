@@ -14,14 +14,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/apply"
-	"github.com/encondata/caddyproxymanager/internal/caddyadmin"
-	"github.com/encondata/caddyproxymanager/internal/geoip"
-	"github.com/encondata/caddyproxymanager/internal/hits"
-	"github.com/encondata/caddyproxymanager/internal/monitor"
-	"github.com/encondata/caddyproxymanager/internal/ratelimit"
-	"github.com/encondata/caddyproxymanager/internal/secrets"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/apply"
+	"github.com/encondata/switchyard/internal/caddyadmin"
+	"github.com/encondata/switchyard/internal/geoip"
+	"github.com/encondata/switchyard/internal/hits"
+	"github.com/encondata/switchyard/internal/monitor"
+	"github.com/encondata/switchyard/internal/ratelimit"
+	"github.com/encondata/switchyard/internal/secrets"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // Options configures the HTTP handler.

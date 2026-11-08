@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/encondata/caddyproxymanager/internal/compiler"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/compiler"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // fakeCaddy stores whatever it's loaded, compacted like Caddy returns it.

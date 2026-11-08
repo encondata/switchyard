@@ -19,10 +19,10 @@ import (
 
 	"github.com/pmezard/go-difflib/difflib"
 
-	"github.com/encondata/caddyproxymanager/internal/compiler"
-	"github.com/encondata/caddyproxymanager/internal/geoip"
-	"github.com/encondata/caddyproxymanager/internal/secrets"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/compiler"
+	"github.com/encondata/switchyard/internal/geoip"
+	"github.com/encondata/switchyard/internal/secrets"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // Caddy is the part of the admin API the service needs.

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // fixture builds a small NPM 2.x database (column names as NPM uses them).

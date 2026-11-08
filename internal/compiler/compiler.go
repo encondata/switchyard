@@ -27,7 +27,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // Settings are the parts of the config that don't come from hosts.

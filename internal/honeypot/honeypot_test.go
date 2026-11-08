@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/hits"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/hits"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 type pusher struct{ n int }

@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/encondata/caddyproxymanager/internal/secrets"
+	"github.com/encondata/switchyard/internal/secrets"
 )
 
 // CrowdSecSettings connect Caddy to a CrowdSec Local API as a bouncer

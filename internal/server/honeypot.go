@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // BanPusher sends bans to Caddy right away.

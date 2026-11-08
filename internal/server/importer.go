@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/npmimport"
+	"github.com/encondata/switchyard/internal/npmimport"
 )
 
 // pendingImports holds previewed plans until they're run (10 minutes).

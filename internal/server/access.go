@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 func (s *srv) handleListFolders(w http.ResponseWriter, r *http.Request) {

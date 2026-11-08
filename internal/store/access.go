@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/geoip"
+	"github.com/encondata/switchyard/internal/geoip"
 )
 
 // ConflictError means an action can't be done in the current state, for

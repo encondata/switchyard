@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/encondata/caddyproxymanager/internal/hits"
-	"github.com/encondata/caddyproxymanager/internal/store"
+	"github.com/encondata/switchyard/internal/hits"
+	"github.com/encondata/switchyard/internal/store"
 )
 
 // BanPusher sends the current ban list to Caddy.

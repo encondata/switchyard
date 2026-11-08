@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/encondata/caddyproxymanager/internal/secrets"
+	"github.com/encondata/switchyard/internal/secrets"
 )
 
 const cfToken = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-Ab"
