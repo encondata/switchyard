@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -167,5 +168,32 @@ func TestFoldersPoliciesAPI(t *testing.T) {
 	}
 	if code, body := c.do("GET", "/api/whoami", ""); code != 200 || body["ip"] != "127.0.0.1" {
 		t.Fatalf("whoami = %d %v", code, body)
+	}
+}
+
+// The hosts list's enable switch sends a list row back as-is, read-only
+// fields (certs, timestamps) included. Saving it must work.
+func TestSaveHostFromListRow(t *testing.T) {
+	c := signedIn(t, &fakeCaddy{running: `{}`})
+	if code, body := c.do("POST", "/api/hosts", `{"type":"proxy","enabled":false,"domains":["row.example.com"],"tls_mode":"auto","upstreams":[{"host":"app"}]}`); code != http.StatusCreated {
+		t.Fatalf("create = %d %v", code, body)
+	}
+	code, rows := c.doList("GET", "/api/hosts")
+	if code != 200 || len(rows) != 1 {
+		t.Fatalf("list = %d %v", code, rows)
+	}
+	row := rows[0].(map[string]any)
+	if _, ok := row["certs"]; !ok {
+		t.Fatalf("list row has no certs field: %v", row)
+	}
+	row["enabled"] = true
+	b, _ := json.Marshal(row)
+	id := strconv.Itoa(int(row["id"].(float64)))
+	if code, body := c.do("PUT", "/api/hosts/"+id, string(b)); code != 200 || body["enabled"] != true {
+		t.Fatalf("save list row = %d %v", code, body)
+	}
+	// Unknown fields that aren't read-only host fields are still refused.
+	if code, _ := c.do("PUT", "/api/hosts/"+id, `{"type":"proxy","domains":["row.example.com"],"upstreams":[{"host":"app"}],"bogus":1}`); code != http.StatusBadRequest {
+		t.Fatalf("unknown field = %d, want 400", code)
 	}
 }

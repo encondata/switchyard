@@ -92,10 +92,14 @@ func (s *srv) handleGetHost(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) handleSaveHost(w http.ResponseWriter, r *http.Request) {
-	var h store.Host
-	if !decodeJSON(w, r, &h) {
+	// Decode as the list's row shape, so a row edited and sent back as-is
+	// (the list's enable switch does this) saves; its certificate status is
+	// read-only and ignored. Truly unknown fields are still refused.
+	var in hostView
+	if !decodeJSON(w, r, &in) {
 		return
 	}
+	h := in.Host
 	h.ID = 0
 	status := http.StatusCreated
 	if r.Method == http.MethodPut {
