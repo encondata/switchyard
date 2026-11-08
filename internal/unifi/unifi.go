@@ -163,11 +163,13 @@ func (c *Client) client() *http.Client {
 		// request, so the key never goes to anything else).
 		t.TLSClientConfig = &tls.Config{
 			InsecureSkipVerify: true, //nolint:gosec // replaced by the pin check below
-			VerifyPeerCertificate: func(raw [][]byte, _ [][]*x509.Certificate) error {
-				if len(raw) == 0 {
+			// VerifyConnection runs on every connection, resumed sessions
+			// included (VerifyPeerCertificate is skipped on resumption).
+			VerifyConnection: func(cs tls.ConnectionState) error {
+				if len(cs.PeerCertificates) == 0 {
 					return ErrCertChanged
 				}
-				sum := sha256.Sum256(raw[0])
+				sum := sha256.Sum256(cs.PeerCertificates[0].Raw)
 				if hex.EncodeToString(sum[:]) != pin {
 					return ErrCertChanged
 				}

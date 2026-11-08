@@ -117,7 +117,7 @@ func (u *Updater) fetch(ctx context.Context, url string) error {
 	if err != nil {
 		return fmt.Errorf("unpacking %s: %w", url, err)
 	}
-	if err := os.MkdirAll(u.Dir, 0o755); err != nil {
+	if err := os.MkdirAll(u.Dir, 0o750); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(u.Dir, ".dbip-*.mmdb")
@@ -138,8 +138,8 @@ func (u *Updater) fetch(ctx context.Context, url string) error {
 	if err := checkDB(tmp.Name()); err != nil {
 		return fmt.Errorf("%s: %w", url, err)
 	}
-	// Caddy reads it too (as uid 1000), so it must be world-readable.
-	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
+	// Caddy reads it too; it runs as the same user as CPM (uid 1000).
+	if err := os.Chmod(tmp.Name(), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), u.Path())

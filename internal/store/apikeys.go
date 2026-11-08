@@ -112,6 +112,7 @@ func (s *Store) CreateAPIKey(ctx context.Context, name string, perms []string, e
 	return k, token, nil
 }
 
+//nolint:gosec // column names, not a credential
 const apiKeyCols = `id, name, prefix, permissions, created_by, created_at, updated_at, expires_at, last_used_at, last_used_ip, revoked_at`
 
 func scanAPIKey(sc interface{ Scan(...any) error }) (APIKey, error) {

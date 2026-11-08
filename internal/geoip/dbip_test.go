@@ -70,8 +70,8 @@ func TestUpdaterDownloadsAndDBUsesIt(t *testing.T) {
 		t.Errorf("ActivePath = %q", db.ActivePath())
 	}
 	info, _ := os.Stat(u.Path())
-	if info.Mode().Perm() != 0o644 {
-		t.Errorf("mode = %v, want world-readable for Caddy", info.Mode())
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %v, want 0600 (Caddy runs as the same user)", info.Mode())
 	}
 	// Fresh: no second download.
 	before := *calls

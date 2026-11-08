@@ -29,7 +29,12 @@ func (s *srv) handleGetHoneypot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *srv) handlePutHoneypot(w http.ResponseWriter, r *http.Request) {
-	var hp store.HoneypotSettings
+	// Start from the current settings, so fields a client leaves out (such
+	// as abuse, from clients older than it) keep their values.
+	hp, err := s.store.Honeypot(r.Context())
+	if s.storeError(w, err) {
+		return
+	}
 	if !decodeJSON(w, r, &hp) {
 		return
 	}
