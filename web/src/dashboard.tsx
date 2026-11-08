@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import {
   Activity,
   ArrowDown,
@@ -32,6 +39,7 @@ import {
   type StatsOverview,
   type StatsPoint,
   type StatsScope,
+  type CountryDetail,
   type TopRow,
 } from './api'
 import { PageHeader } from './shell'
@@ -438,15 +446,23 @@ function TopTable({
   )
 }
 
+const countryName = (code: string, names: Map<string, string>) =>
+  code ? (names.get(code) ?? code) : 'Unknown'
+
 function Countries({
   rows,
   names,
   source,
+  selected,
+  onPick,
 }: {
   rows: TopRow[] | null
   names: Map<string, string>
   source?: string
+  selected: string | null
+  onPick: (code: string) => void
 }) {
+  const [all, setAll] = useState(false)
   const total = (rows ?? []).reduce((a, r) => a + r.count, 0)
   const max = Math.max(1, ...(rows ?? []).map((r) => r.count))
   return (
@@ -469,16 +485,24 @@ function Countries({
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, 6).map((r) => (
-              <tr key={r.key}>
+            {rows.slice(0, all ? rows.length : 6).map((r) => (
+              <tr
+                key={r.key}
+                className={selected === r.key ? 'selected-row' : ''}
+              >
                 <td>
                   <div className="key">
                     <span className="flag" aria-hidden="true">
                       {flag(r.key)}
                     </span>
-                    <span>
-                      {r.key ? (names.get(r.key) ?? r.key) : 'Unknown'}
-                    </span>
+                    <button
+                      className="link"
+                      aria-pressed={selected === r.key}
+                      title="Show this country's requests and targets"
+                      onClick={() => onPick(r.key)}
+                    >
+                      {countryName(r.key, names)}
+                    </button>
                   </div>
                 </td>
                 <td className="bar-cell">
@@ -495,6 +519,11 @@ function Countries({
             ))}
           </tbody>
         </table>
+      )}
+      {rows && rows.length > 6 && (
+        <button className="link show-all" onClick={() => setAll(!all)}>
+          {all ? 'Show fewer' : `Show all ${rows.length}`}
+        </button>
       )}
       {source === 'DB-IP' && (
         <p className="credit">
@@ -703,6 +732,310 @@ function IPPanel({
   )
 }
 
+const axisLabel = (t: string, bucket: number) =>
+  bucket >= 86400
+    ? new Date(t).toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+      })
+    : new Date(t).toLocaleString(undefined, {
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+
+/** Small bars of one country's requests over the range (blocked in red). */
+function MiniBars({
+  series,
+  bucket,
+}: {
+  series: StatsPoint[]
+  bucket: number
+}) {
+  const max = Math.max(1, ...series.map((p) => p.requests))
+  const label = (t: string) =>
+    bucket >= 86400
+      ? new Date(t).toLocaleDateString(undefined, {
+          month: 'short',
+          day: 'numeric',
+        })
+      : new Date(t).toLocaleString(undefined, {
+          weekday: 'short',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+  const peak = series.reduce(
+    (a, p) => (p.requests > a.requests ? p : a),
+    series[0],
+  )
+  return (
+    <div
+      className="minibars"
+      role="img"
+      aria-label={
+        peak && peak.requests
+          ? `Busiest: ${label(peak.t)} with ${fmt.format(peak.requests)} requests`
+          : 'No requests in this range'
+      }
+    >
+      {series.map((p) => (
+        <span
+          key={p.t}
+          className="minibar"
+          title={`${label(p.t)}: ${fmt.format(p.requests)} requests${p.blocked ? `, ${fmt.format(p.blocked)} blocked` : ''}`}
+        >
+          <span
+            className="minibar-fill"
+            style={{ height: `${(p.requests / max) * 100}%` }}
+          >
+            {p.blocked > 0 && (
+              <span
+                className="minibar-blocked"
+                style={{ height: `${(p.blocked / p.requests) * 100}%` }}
+              />
+            )}
+          </span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+/** A ranked list with share bars, for the country breakdown. */
+function ShareList({
+  title,
+  rows,
+  total,
+  render,
+}: {
+  title: string
+  rows: TopRow[]
+  total: number
+  render: (r: TopRow) => ReactNode
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.count))
+  return (
+    <div className="share-list">
+      <h3>{title}</h3>
+      {rows.length === 0 ? (
+        <p className="hint">None in this range.</p>
+      ) : (
+        <ul>
+          {rows.map((r) => (
+            <li key={r.key}>
+              <div className="share-row">
+                <span className="share-key">{render(r)}</span>
+                <span className="num">
+                  {fmt.format(r.count)}
+                  <span className="hint"> · {pct(r.count, total, 0)}</span>
+                </span>
+              </div>
+              <span className="share-track">
+                <span
+                  className="share-fill"
+                  style={{ width: `${(r.count / max) * 100}%` }}
+                />
+              </span>
+              {r.blocked > 0 && (
+                <span className="hint blocked-note">
+                  {fmt.format(r.blocked)} blocked
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function CountryPanel({
+  code,
+  scope,
+  names,
+  rangeLabel,
+  onIP,
+  onClose,
+}: {
+  code: string
+  scope: StatsScope
+  names: Map<string, string>
+  rangeLabel: string
+  onIP: (ip: string) => void
+  onClose: () => void
+}) {
+  const [d, setD] = useState<CountryDetail | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    let live = true
+    api
+      .statsCountry(scope, code)
+      .then((r) => {
+        if (live) {
+          setD(r)
+          setError(null)
+        }
+      })
+      .catch((err: unknown) => live && setError(message(err)))
+    return () => {
+      live = false
+    }
+  }, [code, scope])
+
+  useEffect(() => {
+    ref.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [code])
+
+  const name = countryName(code, names)
+  const codes = new Map((d?.status ?? []).map((r) => [r.key, r.count]))
+  const statusTotal = [...codes.values()].reduce((a, b) => a + b, 0)
+
+  return (
+    <div
+      className="panel country-panel"
+      ref={ref}
+      aria-label={`Traffic from ${name}`}
+    >
+      <div className="panel-head">
+        <h2>
+          <span className="flag" aria-hidden="true">
+            {flag(code)}
+          </span>{' '}
+          {name}
+          <span className="hint"> · last {rangeLabel}</span>
+        </h2>
+        <button className="link" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      {error && <p className="error">{error}</p>}
+      {!d ? (
+        !error && <p className="hint">Loading…</p>
+      ) : d.requests === 0 ? (
+        <p className="hint">No requests from {name} in this range.</p>
+      ) : (
+        <>
+          <dl className="country-stats">
+            <div>
+              <dt>Requests</dt>
+              <dd>{fmt.format(d.requests)}</dd>
+            </div>
+            <div>
+              <dt>Blocked</dt>
+              <dd>
+                {fmt.format(d.blocked)}{' '}
+                <span className="hint">({pct(d.blocked, d.requests)})</span>
+              </dd>
+            </div>
+            <div>
+              <dt>Server errors</dt>
+              <dd>{fmt.format(d.errors)}</dd>
+            </div>
+            <div>
+              <dt>Bandwidth</dt>
+              <dd>{bytes(d.bytes)}</dd>
+            </div>
+            <div>
+              <dt>Unique IPs</dt>
+              <dd>{fmt.format(d.unique_ips)}</dd>
+            </div>
+          </dl>
+          <div>
+            <MiniBars series={d.series} bucket={d.bucket} />
+            {d.series.length > 0 && (
+              <div className="minibars-axis hint">
+                <span>{axisLabel(d.series[0].t, d.bucket)}</span>
+                <span>
+                  <i className="sw s-req" /> Requests{' '}
+                  <i className="sw s-blocked" /> Blocked
+                </span>
+                <span>Now</span>
+              </div>
+            )}
+          </div>
+          <div className="country-grid">
+            <ShareList
+              title="Hosts targeted"
+              rows={d.hosts}
+              total={d.requests}
+              render={(r) => (
+                <>
+                  <Globe size={15} strokeWidth={1.8} aria-hidden="true" />{' '}
+                  {r.key}
+                </>
+              )}
+            />
+            <ShareList
+              title="Paths requested"
+              rows={d.paths}
+              total={d.requests}
+              render={(r) => {
+                const Icon = pathIcon(r.key)
+                return (
+                  <>
+                    <Icon size={15} strokeWidth={1.8} aria-hidden="true" />{' '}
+                    <span className="mono">{r.key}</span>
+                  </>
+                )
+              }}
+            />
+            <ShareList
+              title="Top IPs"
+              rows={d.ips}
+              total={d.requests}
+              render={(r) => (
+                <button className="link" onClick={() => onIP(r.key)}>
+                  {r.key}
+                </button>
+              )}
+            />
+            <div className="share-list">
+              <h3>Responses</h3>
+              <div
+                className="codes-bar"
+                role="img"
+                aria-label="Share of responses by status class"
+              >
+                {codeClasses.map((c) => {
+                  const n = codes.get(c.key) ?? 0
+                  return n ? (
+                    <span
+                      key={c.key}
+                      className={c.cls}
+                      style={{ flexGrow: n }}
+                      title={`${c.label}: ${pct(n, statusTotal)}`}
+                    />
+                  ) : null
+                })}
+              </div>
+              <ul className="codes-list">
+                {codeClasses
+                  .filter((c) => codes.get(c.key))
+                  .map((c) => (
+                    <li key={c.key}>
+                      <i className={`code-dot ${c.cls}`} /> {c.label}
+                      <span className="num">
+                        {fmt.format(codes.get(c.key) ?? 0)}
+                        <span className="hint">
+                          {' '}
+                          · {pct(codes.get(c.key) ?? 0, statusTotal, 0)}
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          </div>
+          <h3 className="recent-title">Latest requests</h3>
+          <HitTable rows={d.recent} names={names} onIP={onIP} />
+        </>
+      )}
+    </div>
+  )
+}
+
 function LiveAndTopIPs({
   scope,
   names,
@@ -860,6 +1193,7 @@ export function Dashboard({
   const [error, setError] = useState<string | null>(null)
   const ipFromRoute = new URLSearchParams(route.split('?')[1] ?? '').get('ip')
   const [ip, setIP] = useState<string | null>(ipFromRoute)
+  const [country, setCountry] = useState<string | null>(null)
   const scope = useMemo<StatsScope>(
     () => ({ range, host, folder }),
     [range, host, folder],
@@ -1084,6 +1418,8 @@ export function Dashboard({
           rows={top.country ?? null}
           names={names}
           source={ov?.geo_source}
+          selected={country}
+          onPick={(c) => setCountry(country === c ? null : c)}
         />
         <TopTable
           title="Top paths"
@@ -1092,6 +1428,18 @@ export function Dashboard({
           icon={(r) => pathIcon(r.key)}
         />
       </div>
+
+      {country !== null && (
+        <CountryPanel
+          key={country}
+          code={country}
+          scope={scope}
+          names={names}
+          rangeLabel={range}
+          onIP={setIP}
+          onClose={() => setCountry(null)}
+        />
+      )}
 
       <LiveAndTopIPs
         key={`${host}-${folder}`}

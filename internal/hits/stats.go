@@ -30,6 +30,11 @@ type Overview struct {
 // Overview sums the hourly rollups (no raw rows), so it stays fast over
 // long ranges. hosts == nil means every host.
 func (d *DB) Overview(ctx context.Context, from, to time.Time, hosts []string) (Overview, error) {
+	return d.overview(ctx, from, to, hosts, "", nil)
+}
+
+// overview is Overview with an extra filter on the rollups (" AND ...").
+func (d *DB) overview(ctx context.Context, from, to time.Time, hosts []string, extra string, extraArgs []any) (Overview, error) {
 	bucket := int64(3600)
 	if to.Sub(from) > 72*time.Hour {
 		bucket = 86400
@@ -38,8 +43,9 @@ func (d *DB) Overview(ctx context.Context, from, to time.Time, hosts []string) (
 	//nolint:gosec // bucket is a constant and hf holds only "?" placeholders
 	q := fmt.Sprintf(`SELECT (hour / %d) * %d AS b, SUM(count), SUM(bytes),
 		SUM(CASE WHEN status_class = 5 THEN count ELSE 0 END), SUM(blocked)
-		FROM hit_rollup WHERE hour >= ? AND hour < ?%s GROUP BY b ORDER BY b`, bucket, bucket, hf)
-	rows, err := d.db.QueryContext(ctx, q, append([]any{from.Unix() / 3600 * 3600, to.Unix()}, args...)...) //nolint:gosec // q is built from constants and "?" placeholders
+		FROM hit_rollup WHERE hour >= ? AND hour < ?%s%s GROUP BY b ORDER BY b`, bucket, bucket, extra, hf)
+	qargs := append(append([]any{from.Unix() / 3600 * 3600, to.Unix()}, extraArgs...), args...)
+	rows, err := d.db.QueryContext(ctx, q, qargs...) //nolint:gosec // q is built from constants and "?" placeholders
 	if err != nil {
 		return Overview{}, err
 	}

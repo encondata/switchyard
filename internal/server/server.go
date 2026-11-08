@@ -184,6 +184,7 @@ func New(opts Options) http.Handler {
 		mux.HandleFunc("GET /api/stats/top", s.requireUser(false, s.handleStatsTop))
 		mux.HandleFunc("GET /api/stats/tail", s.requireUser(false, s.handleStatsTail))
 		mux.HandleFunc("GET /api/stats/ip/{ip}", s.requireUser(false, s.handleStatsIP))
+		mux.HandleFunc("GET /api/stats/country/{code}", s.requireUser(false, s.handleStatsCountry))
 		mux.HandleFunc("GET /api/honeypot", s.requireUser(false, s.handleGetHoneypot))
 		mux.HandleFunc("PUT /api/honeypot", s.requireEditor(s.handlePutHoneypot))
 		mux.HandleFunc("POST /api/honeypot/traps", s.requireEditor(s.handleSaveTrap))

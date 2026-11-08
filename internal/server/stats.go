@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/encondata/switchyard/internal/geoip"
 	"github.com/encondata/switchyard/internal/hits"
 )
 
@@ -215,4 +216,32 @@ func (s *srv) handleStatsIP(w http.ResponseWriter, r *http.Request) {
 		"ip": h.IP, "country": h.Country, "total": h.Total, "blocked": h.Blocked,
 		"hosts": h.Hosts, "recent": s.explain(r.Context(), h.Recent), "never_ban": never, "banned": banned,
 	})
+}
+
+// handleStatsCountry breaks down one country's traffic for the dashboard.
+// The code is an ISO country code, "LAN" for private addresses, or
+// "unknown".
+func (s *srv) handleStatsCountry(w http.ResponseWriter, r *http.Request) {
+	code := strings.ToUpper(r.PathValue("code"))
+	switch {
+	case code == "UNKNOWN":
+		code = ""
+	case code == geoip.LocalNetwork, geoip.ValidCountry(code):
+	default:
+		writeError(w, http.StatusBadRequest, "bad_request", "That isn't a country code.")
+		return
+	}
+	from, to, hosts, err := s.statsScope(r)
+	if s.storeError(w, err) {
+		return
+	}
+	c, err := s.hits.Country(r.Context(), code, from, to, hosts, 10)
+	if s.storeError(w, err) {
+		return
+	}
+	// Recent requests carry a plain-language reason for any block.
+	writeJSON(w, http.StatusOK, struct {
+		hits.CountryDetail
+		Recent []hitView `json:"recent"`
+	}{c, s.explain(r.Context(), c.Recent)})
 }

@@ -390,6 +390,23 @@ export type IPDetail = {
 
 export type StatsScope = { range: string; host?: number; folder?: number }
 
+/** One country's traffic: totals, when, and which hosts, paths and IPs. */
+export type CountryDetail = {
+  country: string
+  series: StatsPoint[]
+  bucket: number
+  requests: number
+  bytes: number
+  errors: number
+  blocked: number
+  unique_ips: number
+  hosts: TopRow[]
+  paths: TopRow[]
+  ips: TopRow[]
+  status: TopRow[]
+  recent: HitRow[]
+}
+
 function scopeQuery(s: StatsScope, extra: Record<string, string> = {}) {
   const p = new URLSearchParams({ range: s.range, ...extra })
   if (s.host) p.set('host', String(s.host))
@@ -659,6 +676,12 @@ export const api = {
       'PUT',
       '/api/crowdsec',
       { enabled, api_url, api_key },
+    ),
+  /** code: ISO country, 'LAN', or 'unknown'. */
+  statsCountry: (s: StatsScope, code: string) =>
+    request<CountryDetail>(
+      'GET',
+      `/api/stats/country/${encodeURIComponent(code || 'unknown')}?${scopeQuery(s)}`,
     ),
   statsIP: (ip: string) =>
     request<IPDetail>('GET', `/api/stats/ip/${encodeURIComponent(ip)}`),
