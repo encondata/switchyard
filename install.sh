@@ -95,7 +95,8 @@ if [ ! -f .env ]; then
   HTTP_PORT="$(pick_port SWITCHYARD_HTTP_PORT 80 8000 'HTTP')"
   HTTPS_PORT="$(pick_port SWITCHYARD_HTTPS_PORT 443 8443 'HTTPS')"
   UI_PORT="$(pick_port SWITCHYARD_UI_PORT 8080 8081 'the web UI')"
-  {
+  # Created private (umask) so the key is never readable by others, even briefly.
+  (umask 077; {
     printf '# Made by install.sh. Docker Compose reads this file; never commit it.\n\n'
     printf '# Encrypts DNS provider tokens in the database. Keep a copy somewhere safe:\n'
     printf '# without it, stored tokens cannot be decrypted after a restore.\n'
@@ -112,8 +113,7 @@ if [ ! -f .env ]; then
     printf '# run this installer again to start the geoip updater.\n'
     printf '# GEOIPUPDATE_ACCOUNT_ID=\n'
     printf '# GEOIPUPDATE_LICENSE_KEY=\n'
-  } > .env
-  chmod 600 .env
+  } > .env)
 fi
 
 setting() { sed -n "s/^$1=//p" .env | tail -1; }
