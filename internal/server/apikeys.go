@@ -55,7 +55,7 @@ func (s *srv) keyAuth(op Op, token string, h http.HandlerFunc) http.HandlerFunc 
 		if role == rolePending {
 			role = roleViewer
 		}
-		u := store.User{Username: "api:" + k.Name, Role: role, TOTPEnabled: true}
+		u := store.User{Username: "api:" + k.Name, Role: role}
 		h(w, r.WithContext(context.WithValue(r.Context(), userKey, u)))
 	}
 }

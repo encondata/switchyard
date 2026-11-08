@@ -35,7 +35,8 @@ func TestAPIKeyAccess(t *testing.T) {
 	c := signedIn(t, &fakeCaddy{running: `{}`})
 
 	// Only operations a key may have are accepted.
-	for _, bad := range []string{`["apikeys.create"]`, `["auth.me"]`, `["nope.nope"]`, `["backup.restore"]`} {
+	for _, bad := range []string{`["apikeys.create"]`, `["auth.me"]`, `["nope.nope"]`, `["backup.restore"]`,
+		`["users.create"]`, `["users.password"]`, `["users.update"]`, `["users.delete"]`, `["users.reset2fa"]`, `["settings.update"]`, `["backup.download"]`} {
 		if code, body := c.do("POST", "/api/keys", `{"name":"x","permissions":`+bad+`}`); code != http.StatusBadRequest {
 			t.Errorf("permissions %s = %d %v", bad, code, body)
 		}
@@ -111,7 +112,7 @@ func TestAPIKeyAccess(t *testing.T) {
 
 	// The picker lists only operations keys can have.
 	code, ops := c.doList("GET", "/api/keys/operations")
-	if code != 200 || len(ops) < 40 {
+	if code != 200 || len(ops) < 30 {
 		t.Fatalf("operations = %d (%d)", code, len(ops))
 	}
 	for _, o := range ops {

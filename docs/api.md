@@ -32,8 +32,10 @@ curl -H "X-API-Key: sy_…"            https://switchyard.example.com/api/hosts
 - Editing a key's permissions takes effect on its next request; the token
   doesn't change.
 - Revoking a key stops it at once. Expired and revoked keys answer `401`.
-- Keys can't sign in, change passwords, manage API keys or restore a
-  backup. Those stay with people.
+- Keys can't sign in, change passwords, manage API keys, create or change
+  user accounts or the sign-in policy, or download or restore backups
+  (backups hold password hashes and secrets). Those stay with people. Keys
+  can still list users and read the audit log.
 - A key acts with exactly the role its operation needs. For example
   `hosts.create` is an editor operation, so a key can't set a host's
   admin-only advanced JSON through it.
@@ -235,16 +237,16 @@ can't use it. Generated from `/api/openapi.json`.
 | Endpoint | What it does | Key permission | Session role |
 |---|---|---|---|
 | `GET /api/audit` | Audit log, newest first | `audit.list` | admin |
-| `GET /api/backup` | Download a backup of the database | `backup.download` | admin |
+| `GET /api/backup` | Download a backup of the database (not for keys: it holds password hashes and secrets) | — | admin |
 | `POST /api/restore` | Restore a backup (replaces everything, API keys included) | — | admin |
 | `GET /api/settings` | Sign-in policy | `settings.get` | admin |
-| `PUT /api/settings` | Change the sign-in policy | `settings.update` | admin |
+| `PUT /api/settings` | Change the sign-in policy | — | admin |
 | `GET /api/users` | List users | `users.list` | admin |
-| `POST /api/users` | Create a user (they choose a new password at first sign-in) | `users.create` | admin |
-| `DELETE /api/users/{id}` | Delete a user | `users.delete` | admin |
-| `PUT /api/users/{id}` | Change a user's role or disable them | `users.update` | admin |
-| `POST /api/users/{id}/password` | Set a temporary password for a user | `users.password` | admin |
-| `POST /api/users/{id}/reset-2fa` | Turn off a user's two-factor sign-in | `users.reset2fa` | admin |
+| `POST /api/users` | Create a user (they choose a new password at first sign-in) | — | admin |
+| `DELETE /api/users/{id}` | Delete a user | — | admin |
+| `PUT /api/users/{id}` | Change a user's role or disable them | — | admin |
+| `POST /api/users/{id}/password` | Set a temporary password for a user | — | admin |
+| `POST /api/users/{id}/reset-2fa` | Turn off a user's two-factor sign-in | — | admin |
 
 ### Import
 

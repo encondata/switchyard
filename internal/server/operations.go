@@ -223,19 +223,21 @@ func (s *srv) routes() []route {
 		r(hi, "crowdsec.get", "GET", "/api/crowdsec", "Honeypot", roleAdmin, true, false, "CrowdSec settings (key never shown)", s.handleGetCrowdSec),
 		with(r(hi, "crowdsec.update", "PUT", "/api/crowdsec", "Honeypot", roleAdmin, true, true, "Change CrowdSec settings", s.handlePutCrowdSec), crowdSecBody{}, nil),
 
-		// Administration.
+		// Administration. Keys may read users and the audit log, but not change
+		// accounts or the sign-in policy (a key could otherwise make itself an
+		// admin person), nor download backups (password hashes, secrets).
 		with(r(st, "users.list", "GET", "/api/users", "Users", roleAdmin, true, false, "List users", s.handleListUsers), nil, []store.User{}),
-		with(r(st, "users.create", "POST", "/api/users", "Users", roleAdmin, true, true, "Create a user (they choose a new password at first sign-in)", s.handleCreateUser), userCreateBody{}, store.User{}),
-		with(r(st, "users.update", "PUT", "/api/users/{id}", "Users", roleAdmin, true, true, "Change a user's role or disable them", s.handleUpdateUser), userUpdateBody{}, store.User{}),
-		with(r(st, "users.password", "POST", "/api/users/{id}/password", "Users", roleAdmin, true, true, "Set a temporary password for a user", s.handleResetUserPassword), passwordBody{}, nil),
-		r(st, "users.reset2fa", "POST", "/api/users/{id}/reset-2fa", "Users", roleAdmin, true, true, "Turn off a user's two-factor sign-in", s.handleResetUser2FA),
-		r(st, "users.delete", "DELETE", "/api/users/{id}", "Users", roleAdmin, true, true, "Delete a user", s.handleDeleteUser),
+		with(r(st, "users.create", "POST", "/api/users", "Users", roleAdmin, false, true, "Create a user (they choose a new password at first sign-in)", s.handleCreateUser), userCreateBody{}, store.User{}),
+		with(r(st, "users.update", "PUT", "/api/users/{id}", "Users", roleAdmin, false, true, "Change a user's role or disable them", s.handleUpdateUser), userUpdateBody{}, store.User{}),
+		with(r(st, "users.password", "POST", "/api/users/{id}/password", "Users", roleAdmin, false, true, "Set a temporary password for a user", s.handleResetUserPassword), passwordBody{}, nil),
+		r(st, "users.reset2fa", "POST", "/api/users/{id}/reset-2fa", "Users", roleAdmin, false, true, "Turn off a user's two-factor sign-in", s.handleResetUser2FA),
+		r(st, "users.delete", "DELETE", "/api/users/{id}", "Users", roleAdmin, false, true, "Delete a user", s.handleDeleteUser),
 		with(r(st, "settings.get", "GET", "/api/settings", "Users", roleAdmin, true, false, "Sign-in policy", s.handleGetSettings), nil, nil),
-		with(r(st, "settings.update", "PUT", "/api/settings", "Users", roleAdmin, true, true, "Change the sign-in policy", s.handlePutSettings), settingsBody{}, nil),
+		with(r(st, "settings.update", "PUT", "/api/settings", "Users", roleAdmin, false, true, "Change the sign-in policy", s.handlePutSettings), settingsBody{}, nil),
 		with(r(st, "audit.list", "GET", "/api/audit", "Users", roleAdmin, true, false, "Audit log, newest first", s.handleAudit), nil, []store.AuditEntry{},
 			Param{"before", "Only entries with a smaller ID (paging)"}, Param{"limit", "Entries (default 100, max 500)"},
 			Param{"entity", "Only this kind of thing, e.g. host"}, Param{"user", "Only this user or key"}),
-		r(mo, "backup.download", "GET", "/api/backup", "Users", roleAdmin, true, false, "Download a backup of the database", s.handleBackup),
+		r(mo, "backup.download", "GET", "/api/backup", "Users", roleAdmin, false, false, "Download a backup of the database (not for keys: it holds password hashes and secrets)", s.handleBackup),
 		r(mo, "backup.restore", "POST", "/api/restore", "Users", roleAdmin, false, true, "Restore a backup (replaces everything, API keys included)", s.handleRestore),
 		r(mo, "import.preview", "POST", "/api/import/npm/preview", "Import", roleAdmin, true, true, "Read Nginx Proxy Manager and preview an import", s.handleImportPreview),
 		r(mo, "import.run", "POST", "/api/import/npm/run", "Import", roleAdmin, true, true, "Run a previewed import", s.handleImportRun),
