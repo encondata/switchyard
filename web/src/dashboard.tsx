@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Activity,
   ArrowDown,
@@ -124,8 +124,18 @@ function TrafficChart({
 }) {
   const [hover, setHover] = useState<number | null>(null)
   const [table, setTable] = useState(false)
-  const W = 760
-  const H = 230
+  // Draw at the panel's real width so the chart fills it at any size.
+  const [W, setW] = useState(760)
+  const ro = useRef<ResizeObserver | null>(null)
+  const measure = useCallback((el: HTMLDivElement | null) => {
+    ro.current?.disconnect()
+    if (!el) return
+    const update = () => setW(Math.max(280, Math.round(el.clientWidth)))
+    update()
+    ro.current = new ResizeObserver(update)
+    ro.current.observe(el)
+  }, [])
+  const H = 260
   const pad = { l: 48, r: 10, t: 10, b: 26 }
   const max = Math.max(1, ...series.map((p) => p.requests))
   const mag = 10 ** Math.floor(Math.log10(max))
@@ -146,7 +156,10 @@ function TrafficChart({
       ? d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
       : d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
   }
-  const every = Math.max(1, Math.ceil(series.length / 12))
+  const every = Math.max(
+    1,
+    Math.ceil(series.length / Math.max(2, Math.floor(W / 90))),
+  )
   const h = hover != null ? series[hover] : null
 
   return (
@@ -191,7 +204,11 @@ function TrafficChart({
           </table>
         </div>
       ) : (
-        <div className="chart-wrap" onMouseLeave={() => setHover(null)}>
+        <div
+          className="chart-wrap"
+          ref={measure}
+          onMouseLeave={() => setHover(null)}
+        >
           <svg
             viewBox={`0 0 ${W} ${H}`}
             role="img"

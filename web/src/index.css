@@ -442,7 +442,6 @@ kbd {
   flex-direction: column;
   gap: 1.25rem;
   width: 100%;
-  max-width: 1440px;
   padding: 1.75rem 2rem 2.5rem;
 }
 
@@ -1157,7 +1156,7 @@ table.top th {
   display: flex;
   align-items: center;
   gap: 0.55rem;
-  max-width: 280px;
+  max-width: 24vw;
 }
 
 .key svg {
@@ -1210,7 +1209,7 @@ table.top th {
 }
 
 .path-cell {
-  max-width: 360px;
+  max-width: 30vw;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
