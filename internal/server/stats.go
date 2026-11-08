@@ -73,7 +73,15 @@ func (s *srv) handleStatsOverview(w http.ResponseWriter, r *http.Request) {
 	if s.storeError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"overview": o, "latency": lat})
+	// The same length of time just before, for the trend arrows.
+	prev, err := s.hits.Overview(r.Context(), from.Add(-to.Sub(from)), from, hosts)
+	if s.storeError(w, err) {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"overview": o, "latency": lat,
+		"previous": map[string]int64{"requests": prev.Requests, "errors": prev.Errors, "blocked": prev.Blocked},
+	})
 }
 
 func (s *srv) handleStatsTop(w http.ResponseWriter, r *http.Request) {

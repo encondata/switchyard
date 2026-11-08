@@ -61,6 +61,8 @@ type Preview struct {
 	// applied (someone changed Caddy directly, or Caddy restarted without it).
 	Drift         bool                 `json:"drift"`
 	CaddyError    string               `json:"caddy_error,omitempty"`
+	// Changes counts edits saved since the last successful apply.
+	Changes int `json:"changes"`
 	LastApplied   *store.ConfigVersion `json:"last_applied,omitempty"`
 	CandidateHash string               `json:"candidate_sha256"`
 }
@@ -111,6 +113,12 @@ func (s *Service) Preview(ctx context.Context) (Preview, error) {
 	}
 	if last, err := s.Store.LastAppliedConfig(ctx); err == nil {
 		p.Drift = !SameIgnoringBans(runningNorm, []byte(last.JSON))
+		if p.Pending {
+			p.Changes, _ = s.Store.ChangesSince(ctx, last.AppliedAt)
+		}
+	}
+	if p.Pending && p.Changes == 0 {
+		p.Changes = 1
 	}
 	return p, nil
 }

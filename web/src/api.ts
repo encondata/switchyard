@@ -242,6 +242,7 @@ export type Preview = {
   caddy_error?: string
   last_applied?: ConfigVersion
   candidate_sha256: string
+  changes: number
 }
 
 export type Alert = {

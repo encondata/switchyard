@@ -11,39 +11,18 @@ import { AuditPage, UsersPage } from './users'
 import { ImportPage } from './importer'
 import { Dashboard } from './dashboard'
 import { HoneypotPage } from './honeypot'
+import { Logo, Sidebar, Topbar } from './shell'
+import { ArrowRight, TriangleAlert } from 'lucide-react'
 
-// Hash routes: #/hosts, #/hosts/new, #/hosts/3, #/changes, #/history, #/status
+// Hash routes: #/dashboard, #/hosts, #/hosts/new, #/hosts/3, #/changes, …
 function useRoute(): string {
-  const [route, setRoute] = useState(location.hash.slice(1) || '/hosts')
+  const [route, setRoute] = useState(location.hash.slice(1) || '/dashboard')
   useEffect(() => {
-    const on = () => setRoute(location.hash.slice(1) || '/hosts')
+    const on = () => setRoute(location.hash.slice(1) || '/dashboard')
     window.addEventListener('hashchange', on)
     return () => window.removeEventListener('hashchange', on)
   }, [])
   return route
-}
-
-/** Switches between the default light theme and an optional dark one. */
-function ThemeToggle() {
-  const [dark, setDark] = useState(
-    () => document.documentElement.dataset.theme === 'dark',
-  )
-  function toggle() {
-    const next = !dark
-    setDark(next)
-    if (next) document.documentElement.dataset.theme = 'dark'
-    else delete document.documentElement.dataset.theme
-    try {
-      localStorage.setItem('cpm-theme', next ? 'dark' : 'light')
-    } catch {
-      // not saved; applies to this visit only
-    }
-  }
-  return (
-    <button className="link" onClick={toggle}>
-      {dark ? 'Light mode' : 'Dark mode'}
-    </button>
-  )
 }
 
 function App() {
@@ -170,7 +149,14 @@ function App() {
     body = <History canEdit={canEdit} onRolledBack={refreshPending} />
   else if (route === '/status' || route === '/health')
     body = <HealthPage isAdmin={user.role === 'admin'} />
-  else if (route === '/dashboard') body = <Dashboard canEdit={canEdit} />
+  else if (route === '/hosts' || route.startsWith('/hosts?'))
+    body = (
+      <HostList
+        canEdit={canEdit}
+        isAdmin={user.role === 'admin'}
+        onChanged={refreshPending}
+      />
+    )
   else if (route === '/honeypot')
     body = (
       <HoneypotPage
@@ -188,85 +174,69 @@ function App() {
     body = <AccessPage canEdit={canEdit} onChanged={refreshPending} />
   else
     body = (
-      <HostList
+      <Dashboard
         canEdit={canEdit}
-        isAdmin={user.role === 'admin'}
-        onChanged={refreshPending}
+        route={route}
+        pending={preview?.pending ? preview.changes : 0}
       />
     )
 
-  const nav = [
-    ['/dashboard', 'Dashboard'],
-    ['/hosts', 'Hosts'],
-    ['/access', 'Access'],
-    ['/dns', 'DNS'],
-    ['/honeypot', 'Honeypot'],
-    ['/certificates', 'Certificates'],
-    ['/changes', 'Review & apply'],
-    ['/history', 'History'],
-    ['/health', 'Health'],
-    ...(user?.role === 'admin'
-      ? [
-          ['/users', 'Users'],
-          ['/audit', 'Audit'],
-        ]
-      : []),
-  ]
-
-  return (
-    <>
-      <header>
-        <strong>CaddyProxyManager</strong>
-        {ready && (
-          <nav className="main-nav">
-            {nav.map(([path, label]) => (
-              <a
-                key={path}
-                href={`#${path}`}
-                className={route.startsWith(path) ? 'active' : ''}
-              >
-                {label}
-                {path === '/changes' && preview?.pending && (
-                  <span className="dot" aria-label="pending changes" />
-                )}
-              </a>
-            ))}
-          </nav>
-        )}
+  // Before sign-in, password change or 2FA enrollment: a centered page.
+  if (!ready)
+    return (
+      <div className="bare">
+        <div className="bare-logo">
+          <Logo />
+        </div>
+        {body}
         {user && (
-          <nav>
-            {ready ? (
-              <a href="#/account" title="Your account and two-factor sign-in">
-                {user.username}
-              </a>
-            ) : (
-              <span>{user.username}</span>
-            )}
-            <ThemeToggle />
-            <button className="link" onClick={signOut}>
-              Sign out
-            </button>
-          </nav>
+          <button className="link bare-out" onClick={signOut}>
+            Sign out
+          </button>
         )}
-      </header>
-      {ready && alerts.length > 0 && route !== '/health' && (
-        <div className="banner alert">
-          {alerts.length === 1
-            ? alerts[0].message
-            : `${alerts.length} alerts need attention.`}{' '}
-          <a href="#/health">See health</a>
-        </div>
-      )}
-      {ready && preview?.pending && route !== '/changes' && (
-        <div className="banner">
-          {preview.drift
-            ? 'Caddy’s running config differs from what CPM last applied.'
-            : 'You have changes that aren’t applied to Caddy yet.'}{' '}
-          <a href="#/changes">Review and apply</a>
-        </div>
-      )}
-      <main>{body}</main>
-    </>
+      </div>
+    )
+
+  const pending = preview?.pending ? preview.changes : 0
+  return (
+    <div className="shell">
+      <Sidebar
+        route={route}
+        user={user}
+        pending={pending}
+        onSignOut={signOut}
+      />
+      <div className="main">
+        <Topbar route={route} />
+        <main className="content">
+          {alerts.length > 0 && route !== '/health' && (
+            <div className="banner banner-bad" role="alert">
+              <TriangleAlert size={20} aria-hidden="true" />
+              <span>
+                {alerts.length === 1
+                  ? alerts[0].message
+                  : `${alerts.length} alerts need attention.`}
+              </span>
+              <a href="#/health">See health</a>
+            </div>
+          )}
+          {pending > 0 && route !== '/changes' && (
+            <div className="banner banner-warn" role="status">
+              <TriangleAlert size={20} aria-hidden="true" />
+              <span>
+                {preview?.drift
+                  ? 'Caddy is running a config CPM didn’t apply'
+                  : `${pending} ${pending === 1 ? 'change' : 'changes'} ready to deploy`}
+              </span>
+              <a href="#/changes">
+                Review & apply <ArrowRight size={16} aria-hidden="true" />
+              </a>
+            </div>
+          )}
+          {body}
+        </main>
+      </div>
+    </div>
   )
 }
 
