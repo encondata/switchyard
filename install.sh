@@ -115,6 +115,8 @@ if [ ! -f .env ]; then
     printf '# GEOIPUPDATE_LICENSE_KEY=\n'
   } > .env)
 fi
+# Also on updates: an older or hand-made .env may be readable by others.
+chmod 600 .env
 
 setting() { sed -n "s/^$1=//p" .env | tail -1; }
 HTTP_PORT="$(setting SWITCHYARD_HTTP_PORT)"; HTTP_PORT="${HTTP_PORT:-80}"
