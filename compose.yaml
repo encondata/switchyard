@@ -1,25 +1,28 @@
-# CaddyProxyManager: Caddy + CPM on one host (spec §2, Deployment).
+# Switchyard: Caddy + its manager (CPM) on one host (spec §2, Deployment).
+# install.sh sets this up; by hand:
 #
 #   docker compose up -d --build
 #   docker compose --profile demo up -d --build   # also starts a test backend
 #
-# Caddy answers on 0.0.0.0:80 and :443; the CPM UI on 0.0.0.0:8080.
+# Caddy answers on 0.0.0.0:80 and :443; the UI on 0.0.0.0:8080. Each port
+# can be moved in .env (SWITCHYARD_HTTP_PORT, SWITCHYARD_HTTPS_PORT,
+# SWITCHYARD_UI_PORT), e.g. to test next to a proxy that already has 80/443.
 # Caddy's admin API is only on a unix socket shared with CPM; port 2019 is
 # never published.
 
-name: cpm
+name: ${COMPOSE_PROJECT_NAME:-switchyard}
 
 services:
   caddy:
     build: ./caddy
-    image: cpm-caddy:local
+    image: switchyard-caddy:local
     restart: unless-stopped
     # The image's entrypoint starts Caddy as uid 1000 with the last config
     # CPM applied, or caddy/bootstrap.json on a fresh install.
     ports:
-      - "0.0.0.0:80:80"
-      - "0.0.0.0:443:443"
-      - "0.0.0.0:443:443/udp" # HTTP/3
+      - "0.0.0.0:${SWITCHYARD_HTTP_PORT:-80}:80"
+      - "0.0.0.0:${SWITCHYARD_HTTPS_PORT:-443}:443"
+      - "0.0.0.0:${SWITCHYARD_HTTPS_PORT:-443}:443/udp" # HTTP/3
     volumes:
       - caddy-applied:/etc/caddy/cpm:ro
       - cpm-secrets:/run/cpm-secrets:ro
@@ -41,13 +44,13 @@ services:
       context: .
       args:
         VERSION: local
-    image: cpm:local
+    image: switchyard:local
     restart: unless-stopped
     depends_on:
       caddy:
         condition: service_healthy
     ports:
-      - "0.0.0.0:8080:8080"
+      - "0.0.0.0:${SWITCHYARD_UI_PORT:-8080}:8080"
     environment:
       CPM_LISTEN: 0.0.0.0:8080
       CPM_DATA_DIR: /data
