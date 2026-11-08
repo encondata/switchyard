@@ -28,8 +28,15 @@ type Scorer struct {
 	Pusher BanPusher
 	Log    *slog.Logger
 
-	mu       sync.Mutex
-	lastBans string
+	// OnChange, if set, runs when the ban list changes (to sync it
+	// elsewhere, e.g. a UniFi firewall). It doesn't wait for Caddy: the
+	// firewall gets bans even while Caddy is unreachable.
+	OnChange func()
+
+	mu           sync.Mutex
+	lastBans     string
+	lastNotified string
+	abuse        abuseTracker
 }
 
 // BanRetention is how long ended bans are kept (they hold IPs; decided
@@ -83,10 +90,25 @@ func BanLength(settings store.HoneypotSettings, pastBans int) time.Duration {
 // HandleHits is the ingester's OnHits callback.
 func (s *Scorer) HandleHits(ctx context.Context, batch []hits.Hit) {
 	settings, err := s.Store.Honeypot(ctx)
-	if err != nil || !settings.Enabled {
+	if err != nil {
 		return
 	}
+	banned := 0
+	if settings.Enabled {
+		banned += s.honeypotBans(ctx, batch, settings)
+	}
+	if settings.Abuse.Enabled {
+		banned += s.abuseBans(ctx, batch, settings)
+	}
+	if banned > 0 {
+		s.Push(ctx)
+	}
+}
+
+// honeypotBans scores honeypot hits and bans addresses over the threshold.
+func (s *Scorer) honeypotBans(ctx context.Context, batch []hits.Hit, settings store.HoneypotSettings) int {
 	var traps []store.TrapPath
+	var err error
 	window := time.Duration(settings.WindowHours) * time.Hour
 	banned := 0
 	for _, h := range batch {
@@ -96,7 +118,7 @@ func (s *Scorer) HandleHits(ctx context.Context, batch []hits.Hit) {
 		if traps == nil {
 			if traps, err = s.Store.ListTrapPaths(ctx); err != nil {
 				s.Log.Warn("honeypot: loading traps", "err", err)
-				return
+				return banned
 			}
 		}
 		pts := Score(h, settings, traps)
@@ -125,9 +147,7 @@ func (s *Scorer) HandleHits(ctx context.Context, batch []hits.Hit) {
 		s.Log.Warn("honeypot: banned", "ip", h.ClientIP, "points", total, "for", length.String(), "repeat", past)
 		banned++
 	}
-	if banned > 0 {
-		s.Push(ctx)
-	}
+	return banned
 }
 
 // Push sends the ban list to Caddy if it changed since the last push.
@@ -137,6 +157,7 @@ func (s *Scorer) Push(ctx context.Context) {
 		return
 	}
 	key := strings.Join(bans, ",")
+	s.notify(key)
 	s.mu.Lock()
 	same := key == s.lastBans
 	s.mu.Unlock()
@@ -152,15 +173,30 @@ func (s *Scorer) Push(ctx context.Context) {
 	s.mu.Unlock()
 }
 
+// notify calls OnChange if the ban list differs from the last one it saw.
+func (s *Scorer) notify(key string) {
+	if s.OnChange == nil {
+		return
+	}
+	s.mu.Lock()
+	changed := key != s.lastNotified
+	s.lastNotified = key
+	s.mu.Unlock()
+	if changed {
+		s.OnChange()
+	}
+}
+
 // ForcePush sends the ban list now (after a manual ban or unban).
 func (s *Scorer) ForcePush(ctx context.Context) error {
 	s.mu.Lock()
 	s.lastBans = "\x00"
 	s.mu.Unlock()
+	bans, _ := s.Store.ActiveBanRanges(ctx)
+	s.notify(strings.Join(bans, ","))
 	if err := s.Pusher.PushBans(ctx); err != nil {
 		return err
 	}
-	bans, _ := s.Store.ActiveBanRanges(ctx)
 	s.mu.Lock()
 	s.lastBans = strings.Join(bans, ",")
 	s.mu.Unlock()
@@ -175,6 +211,7 @@ func (s *Scorer) Maintain(ctx context.Context) {
 	for {
 		s.Push(ctx)
 		settings, _ := s.Store.Honeypot(ctx)
+		s.abuse.prune(time.Now(), time.Duration(settings.Abuse.WindowMinutes)*time.Minute)
 		window := time.Duration(settings.WindowHours) * time.Hour
 		if err := s.Store.PruneHoneypot(ctx, time.Now().UTC(), window, BanRetention); err != nil && ctx.Err() == nil {
 			s.Log.Warn("honeypot: pruning", "err", err)

@@ -26,6 +26,7 @@ import (
 	"github.com/encondata/switchyard/internal/secrets"
 	"github.com/encondata/switchyard/internal/server"
 	"github.com/encondata/switchyard/internal/store"
+	"github.com/encondata/switchyard/internal/unifi"
 	"github.com/encondata/switchyard/web"
 )
 
@@ -150,7 +151,10 @@ func main() {
 	}
 	defer func() { _ = hitsDB.Close() }()
 	retainDays, _ := strconv.Atoi(os.Getenv("CPM_HIT_RETENTION_DAYS"))
-	scorer := &honeypot.Scorer{Store: st, Pusher: applier, Log: logger}
+	// Bans also go to a UniFi firewall, if one is set up (Honeypot page).
+	unifiSync := &unifi.Syncer{Store: st, Box: box, Log: logger}
+	go unifiSync.Run(ctx)
+	scorer := &honeypot.Scorer{Store: st, Pusher: applier, Log: logger, OnChange: unifiSync.Trigger}
 	ingester := &hits.Ingester{
 		DB: hitsDB, File: envOr("CPM_ACCESS_LOG", "/var/log/caddy/access.log"), Geo: geo, Log: logger,
 		RetainHits: time.Duration(retainDays) * 24 * time.Hour,
@@ -195,7 +199,7 @@ func main() {
 			Version: version, UI: web.Dist(), Logger: logger,
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
 			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"), Box: box,
-			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo, Hits: hitsDB, Bans: scorer,
+			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo, Hits: hitsDB, Bans: scorer, UniFi: unifiSync,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

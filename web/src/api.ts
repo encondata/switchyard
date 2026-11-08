@@ -456,6 +456,16 @@ export type HoneypotSettings = {
   window_hours: number
   ban_days: number
   max_ban_days: number
+  abuse: AbuseSettings
+}
+
+/** Ban addresses that keep getting rate-limited, blocked or 404 answers. */
+export type AbuseSettings = {
+  enabled: boolean
+  window_minutes: number
+  rate_limited: number
+  blocked: number
+  not_found: number
 }
 
 export type TrapPath = {
@@ -700,6 +710,16 @@ export const api = {
     request<{ lifted: number; warning: string }>('POST', '/api/bans/unban', {
       cidr,
     }),
+  unifi: () => request<UniFiView>('GET', '/api/unifi'),
+  saveUniFi: (u: UniFiSettings & { api_key: string }) =>
+    request<UniFiView>('PUT', '/api/unifi', u),
+  checkUniFi: (url: string, api_key: string, cert_sha256: string) =>
+    request<UniFiCheck>('POST', '/api/unifi/check', {
+      url,
+      api_key,
+      cert_sha256,
+    }),
+  syncUniFi: () => request<UniFiStatus>('POST', '/api/unifi/sync'),
   crowdsec: () =>
     request<{ enabled: boolean; api_url: string; key_set: boolean }>(
       'GET',
@@ -868,4 +888,53 @@ export type OpenAPIDoc = {
     >
   >
   components: { schemas: Record<string, unknown> }
+}
+
+/** Keeping the ban list in a UniFi console's firewall. */
+export type UniFiSettings = {
+  enabled: boolean
+  url: string
+  site_id: string
+  site_name: string
+  list_name: string
+  cert_sha256: string
+  key_set?: boolean
+}
+
+export type UniFiStatus = {
+  enabled: boolean
+  last_sync: string | null
+  last_error: string
+  ipv4: number
+  ipv6: number
+  lists:
+    | {
+        id: string
+        name: string
+        type: string
+        policies: { name: string; enabled: boolean; action: string }[]
+      }[]
+    | null
+}
+
+export type UniFiView = {
+  settings: UniFiSettings
+  status?: UniFiStatus
+  fingerprint?: string
+}
+
+export type UniFiCheck = {
+  cert?: {
+    sha256: string
+    subject: string
+    issuer: string
+    expires: string
+    valid: boolean
+  }
+  fingerprint?: string
+  needs_trust: boolean
+  cert_changed: boolean
+  sites: { id: string; name: string; internalReference: string }[]
+  error?: string
+  cert_sha256: string
 }

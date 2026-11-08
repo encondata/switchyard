@@ -223,6 +223,12 @@ func (s *srv) routes() []route {
 		r(hi, "crowdsec.get", "GET", "/api/crowdsec", "Honeypot", roleAdmin, true, false, "CrowdSec settings (key never shown)", s.handleGetCrowdSec),
 		with(r(hi, "crowdsec.update", "PUT", "/api/crowdsec", "Honeypot", roleAdmin, true, true, "Change CrowdSec settings", s.handlePutCrowdSec), crowdSecBody{}, nil),
 
+		// Firewall sync: the ban list kept in a UniFi console's firewall.
+		with(r(st, "unifi.get", "GET", "/api/unifi", "Firewall", roleAdmin, true, false, "UniFi firewall sync: settings and last sync (key never shown)", s.handleGetUniFi), nil, nil),
+		with(r(st, "unifi.update", "PUT", "/api/unifi", "Firewall", roleAdmin, false, true, "Change UniFi firewall sync settings", s.handlePutUniFi), unifiBody{}, nil),
+		with(r(st, "unifi.check", "POST", "/api/unifi/check", "Firewall", roleAdmin, false, true, "Check a console: its certificate, then its sites", s.handleCheckUniFi), unifiCheckBody{}, unifiCheckResult{}),
+		r(st, "unifi.sync", "POST", "/api/unifi/sync", "Firewall", roleAdmin, true, true, "Send the ban list to the UniFi console now", s.handleSyncUniFi),
+
 		// Administration. Keys may read users and the audit log, but not change
 		// accounts or the sign-in policy (a key could otherwise make itself an
 		// admin person), nor download backups (password hashes, secrets).

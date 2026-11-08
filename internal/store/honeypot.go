@@ -24,12 +24,31 @@ type HoneypotSettings struct {
 	WindowHours   int    `json:"window_hours"`
 	BanDays       int    `json:"ban_days"`
 	MaxBanDays    int    `json:"max_ban_days"`
+	// Abuse bans addresses for how they treat real hosts, honeypot or not.
+	Abuse AbuseSettings `json:"abuse"`
+}
+
+// AbuseSettings ban an address that, within WindowMinutes, gets at least
+// RateLimited rate-limited (429) answers, Blocked requests refused by
+// access rules, or NotFound "not found" (404) answers from a host. 0 turns
+// that count off. Bans use the honeypot's ban length (doubling for
+// repeats); never-block and local network addresses are never banned.
+type AbuseSettings struct {
+	Enabled       bool `json:"enabled"`
+	WindowMinutes int  `json:"window_minutes"`
+	RateLimited   int  `json:"rate_limited"`
+	Blocked       int  `json:"blocked"`
+	NotFound      int  `json:"not_found"`
 }
 
 // DefaultHoneypot is the spec's defaults, switched off until an admin
 // turns it on.
 var DefaultHoneypot = HoneypotSettings{
 	Enabled: false, Response: "login", CatchallScore: 1, Threshold: 10, WindowHours: 24, BanDays: 7, MaxBanDays: 90,
+	// High enough that a person on a site with a few broken links, or
+	// behind a busy shared address, isn't caught; scanners and floods
+	// pass these in seconds.
+	Abuse: AbuseSettings{Enabled: true, WindowMinutes: 5, RateLimited: 30, Blocked: 50, NotFound: 100},
 }
 
 const settingHoneypot = "honeypot"
@@ -69,6 +88,20 @@ func (s *Store) SaveHoneypot(ctx context.Context, h HoneypotSettings, by string)
 	}
 	if h.MaxBanDays < h.BanDays || h.MaxBanDays > 3650 {
 		errs["max_ban_days"] = "at least the first ban length, at most 3650 days"
+	}
+	a := h.Abuse
+	if a.WindowMinutes < 1 || a.WindowMinutes > 60 {
+		errs["abuse.window_minutes"] = "1 to 60 minutes"
+	}
+	for k, v := range map[string]int{"abuse.rate_limited": a.RateLimited, "abuse.blocked": a.Blocked, "abuse.not_found": a.NotFound} {
+		if v < 0 || v > 100000 {
+			errs[k] = "0 (off) to 100000"
+		} else if v > 0 && v < 5 {
+			errs[k] = "at least 5, so one slip doesn't ban someone (0 turns it off)"
+		}
+	}
+	if a.Enabled && a.RateLimited == 0 && a.Blocked == 0 && a.NotFound == 0 {
+		errs["abuse.enabled"] = "set at least one count, or turn abuse bans off"
 	}
 	if len(errs) > 0 {
 		return h, errs
@@ -324,7 +357,7 @@ func (s *Store) UnbanAddress(ctx context.Context, cidr, by string) (int64, error
 // PastBans counts earlier bans of an address (for doubling repeat bans).
 func (s *Store) PastBans(ctx context.Context, cidr string) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bans WHERE cidr = ? AND source = 'honeypot'`, cidr).Scan(&n)
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bans WHERE cidr = ? AND source IN ('honeypot', 'abuse')`, cidr).Scan(&n)
 	return n, err
 }
 

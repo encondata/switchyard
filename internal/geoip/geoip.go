@@ -161,13 +161,21 @@ const LocalNetwork = "LAN"
 // Locate is Country, except that private and other non-public addresses
 // give LocalNetwork instead of "". It's what traffic stats record.
 func (d *DB) Locate(ip string) string {
-	if addr, err := netip.ParseAddr(ip); err == nil {
-		a := addr.Unmap()
-		if a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsUnspecified() || cgnat.Contains(a) {
-			return LocalNetwork
-		}
+	if IsLocal(ip) {
+		return LocalNetwork
 	}
 	return d.Country(ip)
+}
+
+// IsLocal reports whether ip is a private, loopback, link-local or
+// carrier-grade NAT address: one of yours, never a visitor to ban.
+func IsLocal(ip string) bool {
+	addr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	a := addr.Unmap()
+	return a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsUnspecified() || cgnat.Contains(a)
 }
 
 // cgnat is carrier-grade NAT space (RFC 6598), also never public.

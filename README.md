@@ -34,6 +34,12 @@ Work tracking: Harbor Master project `CPM`.
   detail, live view.
 - **Honeypot:** a catch-all for unknown hosts and bare IPs, trap paths on
   every host, scoring and automatic bans that reach every host in seconds.
+- **Abuse bans:** addresses that keep getting rate-limited, blocked or
+  not-found answers on real hosts are banned too (on by default: 30 / 50 /
+  100 within 5 minutes; Honeypot page).
+- **UniFi firewall sync (optional):** the ban list is kept in a UniFi
+  gateway's firewall, so banned addresses are dropped before they reach
+  Caddy. See [UniFi firewall](#unifi-firewall).
 - **Admin:** users with admin / editor / viewer roles, TOTP two-factor
   sign-in (can be required), sign-in rate limits, audit log, alerts, health
   page, backup and restore, NPM importer.
@@ -51,6 +57,34 @@ on Unraid), makes the encryption key, picks free ports if 80, 443 or 8080
 are taken (handy for testing next to Nginx Proxy Manager), builds and
 starts everything, and prints the address and first sign-in. Run it again
 to update; your settings and data are kept.
+
+## UniFi firewall
+
+Switchyard can keep its ban list in a UniFi gateway, so banned addresses are
+dropped at the edge instead of reaching Caddy. It uses the official UniFi
+Network Integration API, so it needs **UniFi Network 10 or newer**.
+
+1. On the console: Settings → Control Plane → Integrations → create an API
+   key. It acts as the admin who makes it, so use an admin with Network
+   access.
+2. In Switchyard: Honeypot → UniFi firewall. Enter the console's address
+   (e.g. `https://192.168.1.1`) and the key, then **Check connection**.
+   Consoles ship a self-signed certificate: compare the fingerprint with the
+   one your browser shows for the console, then **Trust this certificate**.
+   Switchyard then talks only to a console with that exact certificate, and
+   never sends the key anywhere else.
+3. Pick the site (a fabric can have several), tick **Keep the ban list in
+   this console's firewall** and save. Switchyard creates an IP list called
+   "Switchyard bans (IPv4)" (and an IPv6 one once there's an IPv6 ban).
+4. On the console, once: add a zone-based firewall policy that **blocks**
+   traffic from the External zone matching that list, to the zone your port
+   forwards land in. The UniFi card confirms when it finds the policy.
+
+The list follows the ban list within seconds of a change (even while Caddy
+is down) and is checked every 5 minutes. Never-block addresses are never
+banned, so they never reach the list. An empty ban list leaves one
+placeholder entry (`192.0.2.255`, a documentation address that's never used
+on the internet), because UniFi lists can't be empty.
 
 ## API
 

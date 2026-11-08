@@ -22,6 +22,7 @@ import (
 	"github.com/encondata/switchyard/internal/ratelimit"
 	"github.com/encondata/switchyard/internal/secrets"
 	"github.com/encondata/switchyard/internal/store"
+	"github.com/encondata/switchyard/internal/unifi"
 )
 
 // Options configures the HTTP handler.
@@ -55,6 +56,8 @@ type Options struct {
 	Hits *hits.DB
 	// Bans pushes the ban list to Caddy after manual changes.
 	Bans BanPusher
+	// UniFi keeps the ban list in a UniFi firewall (optional).
+	UniFi *unifi.Syncer
 }
 
 type srv struct {
@@ -77,6 +80,7 @@ type srv struct {
 	hits         *hits.DB
 	topCache     topCache
 	bans         BanPusher
+	unifi        *unifi.Syncer
 }
 
 // New returns the root HTTP handler.
@@ -99,6 +103,7 @@ func New(opts Options) http.Handler {
 		geo:           opts.GeoIP,
 		hits:          opts.Hits,
 		bans:          opts.Bans,
+		unifi:         opts.UniFi,
 		ipFailures:    ratelimit.New(10, 15*time.Minute),
 		userFailures:  ratelimit.New(5, 15*time.Minute),
 	}

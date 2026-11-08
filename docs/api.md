@@ -223,6 +223,15 @@ can't use it. Generated from `/api/openapi.json`.
 | `DELETE /api/honeypot/traps/{id}` | Delete a trap path | `traps.delete` | editor or admin |
 | `PUT /api/honeypot/traps/{id}` | Change a trap path | `traps.update` | editor or admin |
 
+### Firewall
+
+| Endpoint | What it does | Key permission | Session role |
+|---|---|---|---|
+| `GET /api/unifi` | UniFi firewall sync: settings and last sync (key never shown) | `unifi.get` | admin |
+| `PUT /api/unifi` | Change UniFi firewall sync settings | — | admin |
+| `POST /api/unifi/check` | Check a console: its certificate, then its sites | — | admin |
+| `POST /api/unifi/sync` | Send the ban list to the UniFi console now | `unifi.sync` | admin |
+
 ### Health
 
 | Endpoint | What it does | Key permission | Session role |
@@ -280,4 +289,3 @@ can't use it. Generated from `/api/openapi.json`.
 | `GET /api/auth/preferences` | Your display preferences | — | viewer or above |
 | `PUT /api/auth/preferences` | Save your display preferences | — | viewer or above |
 | `POST /api/auth/totp` | Finish signing in with a two-factor code | — | none (public) |
-

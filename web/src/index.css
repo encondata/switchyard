@@ -2411,3 +2411,33 @@ details summary {
 .api-table td:first-child {
   width: 1%;
 }
+
+/* ---------- UniFi firewall ---------- */
+
+.notice.trust {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  border: 1px solid var(--warn-border);
+}
+
+.notice.trust p {
+  margin: 0;
+}
+
+.fingerprint {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.unifi-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.unifi-status p {
+  margin: 0;
+}

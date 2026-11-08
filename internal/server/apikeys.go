@@ -162,7 +162,7 @@ func (s *srv) handleKeyOperations(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, ops)
 }
 
-var areas = []string{"Hosts", "Folders", "Access", "DNS", "Certificates", "Config", "Traffic", "Honeypot", "Health", "Users", "Import", "API keys", "Account"}
+var areas = []string{"Hosts", "Folders", "Access", "DNS", "Certificates", "Config", "Traffic", "Honeypot", "Firewall", "Health", "Users", "Import", "API keys", "Account"}
 
 func areaOrder(a string) int {
 	for i, x := range areas {

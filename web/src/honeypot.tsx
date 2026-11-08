@@ -1,3 +1,4 @@
+import { UniFiCard } from './unificard'
 import { useEffect, useState, type FormEvent } from 'react'
 import {
   api,
@@ -330,6 +331,67 @@ export function HoneypotPage({
               Repeat offenders get twice the previous ban, up to the longest
               ban.
             </p>
+            <fieldset>
+              <legend>Automatic bans for abuse</legend>
+              <label className="inline">
+                <input
+                  type="checkbox"
+                  disabled={!canEdit}
+                  checked={settings.abuse.enabled}
+                  onChange={(e) =>
+                    setSettings({
+                      ...settings,
+                      abuse: { ...settings.abuse, enabled: e.target.checked },
+                    })
+                  }
+                />
+                Ban addresses that keep misbehaving on your real hosts
+              </label>
+              <p className="hint">
+                Works whether or not the honeypot is on. An address is banned on
+                every host (for the ban lengths above) when, within the window,
+                it gets at least this many of any one kind. 0 turns a kind off.
+                Your local network and the never-block list are never banned.
+              </p>
+              <div className="actions">
+                {(
+                  [
+                    ['rate_limited', 'Rate-limited (429)'],
+                    ['blocked', 'Blocked by access rules'],
+                    ['not_found', 'Not found (404)'],
+                    ['window_minutes', 'Within (minutes)'],
+                  ] as const
+                ).map(([k, label]) => (
+                  <label key={k}>
+                    {label}
+                    <input
+                      type="number"
+                      min={0}
+                      className="small-num"
+                      disabled={!canEdit || !settings.abuse.enabled}
+                      value={settings.abuse[k]}
+                      onChange={(e) =>
+                        setSettings({
+                          ...settings,
+                          abuse: {
+                            ...settings.abuse,
+                            [k]: Number(e.target.value),
+                          },
+                        })
+                      }
+                    />
+                    {fields[`abuse.${k}`] && (
+                      <span className="field-error">
+                        {fields[`abuse.${k}`]}
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+              {fields['abuse.enabled'] && (
+                <span className="field-error">{fields['abuse.enabled']}</span>
+              )}
+            </fieldset>
             {canEdit && (
               <div className="actions">
                 <button>Save</button>
@@ -579,6 +641,8 @@ export function HoneypotPage({
       </section>
 
       {isAdmin && <CrowdSecCard onChanged={onChanged} />}
+
+      {isAdmin && <UniFiCard />}
 
       <section className="card">
         <div className="toolbar">
