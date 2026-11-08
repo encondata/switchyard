@@ -1,7 +1,7 @@
 /** Accent colors offered in Account > Preferences. All keep white button text readable. */
 export const accentPresets: { name: string; hex: string }[] = [
-  { name: 'Green', hex: '' },
-  { name: 'Teal', hex: '#0f766e' },
+  { name: 'Switchyard', hex: '' },
+  { name: 'Green', hex: '#0e7c61' },
   { name: 'Blue', hex: '#2563eb' },
   { name: 'Indigo', hex: '#4f46e5' },
   { name: 'Purple', hex: '#7c3aed' },
@@ -11,7 +11,7 @@ export const accentPresets: { name: string; hex: string }[] = [
   { name: 'Slate', hex: '#475569' },
 ]
 
-export const defaultAccent = '#0e7c61'
+export const defaultAccent = '#038076'
 
 const storageKey = 'cpm-accent'
 
@@ -28,7 +28,7 @@ export function applyAccent(hex: string) {
   }
 }
 
-/** Apply the last-used accent before first paint, so it doesn't flash green. */
+/** Apply the last-used accent before first paint, so it doesn't flash the default. */
 export function applyStoredAccent() {
   try {
     const hex = localStorage.getItem(storageKey)

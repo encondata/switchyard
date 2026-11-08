@@ -19,26 +19,41 @@ import {
 import { api, type Alert, type HostView, type User } from './api'
 import { NotificationBell } from './notify'
 
-/** The CPM mark: one entry point fanning out to upstreams. */
+/** The Switchyard mark: an S of track with two rails switching across it. */
+export function Mark({ size = 34 }: { size?: number }) {
+  return (
+    <svg
+      className="mark"
+      viewBox="133 183 362 320"
+      width={size}
+      height={(size * 320) / 362}
+      aria-hidden="true"
+    >
+      <path
+        className="mark-track"
+        d="M495 207 H216.5 A59.5 59.5 0 0 0 216.5 326 H277 L352 376 H418.5 A51.5 51.5 0 0 1 418.5 479 H133"
+        fill="none"
+        strokeWidth="48"
+        strokeLinejoin="round"
+      />
+      <path
+        className="mark-rail"
+        d="M495 251 H343 L302 288 L308 299 H315 L335 319 L355 299 H495 Z"
+      />
+      <path
+        className="mark-rail"
+        d="M133 437 H264 L305 400 L299 389 H292 L272 369 L252 389 H133 Z"
+      />
+    </svg>
+  )
+}
+
+/** Mark and wordmark, linking home. */
 export function Logo() {
   return (
-    <a className="logo" href="#/dashboard" aria-label="CaddyProxyManager home">
-      <svg viewBox="0 0 32 32" width="34" height="34" aria-hidden="true">
-        <path
-          d="M9 16 L23 7 M9 16 L23 16 M9 16 L23 25"
-          stroke="currentColor"
-          strokeWidth="2.6"
-          strokeLinecap="round"
-        />
-        <circle cx="8" cy="16" r="5" fill="currentColor" />
-        <circle cx="24" cy="7" r="3.4" fill="currentColor" />
-        <circle cx="24" cy="16" r="3.4" fill="currentColor" />
-        <circle cx="24" cy="25" r="3.4" fill="currentColor" />
-      </svg>
-      <span className="logo-text">
-        <span className="logo-name">Caddy</span>
-        <span className="logo-sub">Proxy Manager</span>
-      </span>
+    <a className="logo" href="#/dashboard" aria-label="Switchyard home">
+      <Mark />
+      <span className="logo-name">Switchyard</span>
     </a>
   )
 }
@@ -369,8 +384,8 @@ export function Topbar({
   return (
     <header className="topbar">
       <div className="crumbs">
-        <Layers size={18} strokeWidth={1.8} aria-hidden="true" />
-        <span>CaddyProxyManager</span>
+        <Mark size={18} />
+        <span>Switchyard</span>
         <span className="crumb-sep">/</span>
         {sub ? (
           <>

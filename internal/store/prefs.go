@@ -13,7 +13,7 @@ import (
 // Prefs are one user's display preferences.
 type Prefs struct {
 	// Accent is a #rrggbb color for buttons, links and highlights; empty
-	// means the default green.
+	// means the default (Switchyard teal).
 	Accent string `json:"accent"`
 }
 

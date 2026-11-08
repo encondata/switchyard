@@ -1,4 +1,4 @@
-/** One user's display preferences. accent '' = the default green. */
+/** One user's display preferences. accent '' = the default teal. */
 export type Prefs = { accent: string }
 
 export type User = {
