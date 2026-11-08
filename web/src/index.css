@@ -20,28 +20,28 @@
   font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
   color: var(--text);
   background: var(--bg);
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1419;
-    --surface: #171d24;
-    --text: #e6e9ee;
-    --muted: #9aa4b2;
-    --border: #2d3540;
-    --accent: #4c8dff;
-    --ok: #3fb950;
-    --bad: #f85149;
-    --notice-bg: #3b2f00;
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --grid: #2a313b;
-    --success-bg: #12361f;
-    --add-bg: #12361f;
-    --del-bg: #3d1417;
-    --code-bg: #0b0f14;
-  }
+/* Light is the default. Dark only when the user turns it on (header toggle). */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0f1419;
+  --surface: #171d24;
+  --text: #e6e9ee;
+  --muted: #9aa4b2;
+  --border: #2d3540;
+  --accent: #4c8dff;
+  --ok: #3fb950;
+  --bad: #f85149;
+  --notice-bg: #3b2f00;
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --grid: #2a313b;
+  --success-bg: #12361f;
+  --add-bg: #12361f;
+  --del-bg: #3d1417;
+  --code-bg: #0b0f14;
 }
 
 body {

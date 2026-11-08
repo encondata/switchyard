@@ -23,6 +23,29 @@ function useRoute(): string {
   return route
 }
 
+/** Switches between the default light theme and an optional dark one. */
+function ThemeToggle() {
+  const [dark, setDark] = useState(
+    () => document.documentElement.dataset.theme === 'dark',
+  )
+  function toggle() {
+    const next = !dark
+    setDark(next)
+    if (next) document.documentElement.dataset.theme = 'dark'
+    else delete document.documentElement.dataset.theme
+    try {
+      localStorage.setItem('cpm-theme', next ? 'dark' : 'light')
+    } catch {
+      // not saved; applies to this visit only
+    }
+  }
+  return (
+    <button className="link" onClick={toggle}>
+      {dark ? 'Light mode' : 'Dark mode'}
+    </button>
+  )
+}
+
 function App() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
@@ -219,6 +242,7 @@ function App() {
             ) : (
               <span>{user.username}</span>
             )}
+            <ThemeToggle />
             <button className="link" onClick={signOut}>
               Sign out
             </button>
