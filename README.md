@@ -52,6 +52,13 @@ are taken (handy for testing next to Nginx Proxy Manager), builds and
 starts everything, and prints the address and first sign-in. Run it again
 to update; your settings and data are kept.
 
+## API
+
+Other programs can manage Switchyard over its REST API with API keys that
+admins make on **Administration → API keys**, each limited to the
+operations you pick. See [docs/api.md](docs/api.md); the OpenAPI document
+is at `/api/openapi.json`.
+
 ## Run it by hand
 
 ```bash

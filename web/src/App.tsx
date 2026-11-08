@@ -11,6 +11,7 @@ import { AuditPage, UsersPage } from './users'
 import { ImportPage } from './importer'
 import { Dashboard } from './dashboard'
 import { HoneypotPage } from './honeypot'
+import { ApiDocsPage, ApiKeysPage } from './apikeys'
 import { Logo, Sidebar, Topbar } from './shell'
 import { ArrowRight, TriangleAlert } from 'lucide-react'
 import { applyAccent } from './accent'
@@ -137,6 +138,9 @@ function App() {
   else if (route === '/users' && user.role === 'admin')
     body = <UsersPage me={user} />
   else if (route === '/audit' && user.role === 'admin') body = <AuditPage />
+  else if (route === '/api-keys' && user.role === 'admin')
+    body = <ApiKeysPage />
+  else if (route === '/api-docs') body = <ApiDocsPage />
   else if (route === '/import' && user.role === 'admin')
     body = <ImportPage onImported={refreshPending} />
   else if (route.startsWith('/hosts/new')) {

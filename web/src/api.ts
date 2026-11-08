@@ -390,6 +390,40 @@ export type IPDetail = {
 
 export type StatsScope = { range: string; host?: number; folder?: number }
 
+/** An API key (the token itself is only ever in createAPIKey's answer). */
+export type APIKey = {
+  id: number
+  name: string
+  prefix: string
+  permissions: string[]
+  created_by: string
+  created_at: string
+  updated_at: string
+  expires_at: string | null
+  last_used_at: string | null
+  last_used_ip: string
+  revoked_at: string | null
+}
+
+/** An API operation a key can be given. */
+export type APIOperation = {
+  id: string
+  method: string
+  path: string
+  area: string
+  summary: string
+  role: string
+  keyable: boolean
+  write: boolean
+  query?: { name: string; description: string }[]
+}
+
+export type APIKeyInput = {
+  name: string
+  permissions: string[]
+  expires_at: string | null
+}
+
 /** One country's traffic: totals, when, and which hosts, paths and IPs. */
 export type CountryDetail = {
   country: string
@@ -677,6 +711,14 @@ export const api = {
       '/api/crowdsec',
       { enabled, api_url, api_key },
     ),
+  apiKeys: () => request<APIKey[]>('GET', '/api/keys'),
+  keyOperations: () => request<APIOperation[]>('GET', '/api/keys/operations'),
+  createAPIKey: (k: APIKeyInput) =>
+    request<{ key: APIKey; token: string }>('POST', '/api/keys', k),
+  updateAPIKey: (id: number, k: APIKeyInput) =>
+    request<APIKey>('PUT', `/api/keys/${id}`, k),
+  revokeAPIKey: (id: number) => request<void>('POST', `/api/keys/${id}/revoke`),
+  openapi: () => request<OpenAPIDoc>('GET', '/api/openapi.json'),
   /** code: ISO country, 'LAN', or 'unknown'. */
   statsCountry: (s: StatsScope, code: string) =>
     request<CountryDetail>(
@@ -803,4 +845,27 @@ export function newHost(): Host {
     rate_limit_events: 0,
     rate_limit_window: 60,
   }
+}
+
+/** The parts of the OpenAPI document the API reference page shows. */
+export type OpenAPIDoc = {
+  info: { title: string; version: string; description: string }
+  tags: { name: string }[]
+  paths: Record<
+    string,
+    Record<
+      string,
+      {
+        operationId: string
+        summary: string
+        description: string
+        tags: string[]
+        parameters: { name: string; in: string; description?: string }[]
+        requestBody?: { content: { 'application/json': { schema: unknown } } }
+        'x-keyable': boolean
+        'x-writes': boolean
+      }
+    >
+  >
+  components: { schemas: Record<string, unknown> }
 }

@@ -2251,3 +2251,163 @@ details summary {
   margin-left: 0.6rem;
   background: var(--c5);
 }
+
+/* ---------- API keys ---------- */
+
+.method {
+  display: inline-block;
+  min-width: 3.6rem;
+  padding: 0.05rem 0.35rem;
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.method-get {
+  background: color-mix(in srgb, var(--c3) 16%, transparent);
+  color: color-mix(in srgb, var(--c3) 55%, var(--text));
+}
+
+.method-post {
+  background: color-mix(in srgb, var(--c2) 16%, transparent);
+  color: var(--ok);
+}
+
+.method-put {
+  background: color-mix(in srgb, var(--c4) 20%, transparent);
+  color: var(--warn);
+}
+
+.method-delete {
+  background: color-mix(in srgb, var(--c5) 14%, transparent);
+  color: var(--bad);
+}
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.picker-tools {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.picker-search {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.picker-search input {
+  border: 0;
+  padding: 0.45rem 0;
+  outline: none;
+  background: none;
+}
+
+.picker-search.wide {
+  max-width: 420px;
+}
+
+.picker-area {
+  gap: 0.25rem;
+}
+
+.picker-area-tools {
+  display: flex;
+  gap: 0.9rem;
+  margin: -0.2rem 0 0.25rem;
+  font-size: 0.85rem;
+}
+
+.picker-op {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.35rem 0.4rem;
+  border-radius: 6px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.picker-op:hover {
+  background: var(--surface-2);
+}
+
+.picker-op input {
+  margin-top: 0.2rem;
+}
+
+.picker-op .method {
+  margin-top: 0.1rem;
+}
+
+.picker-op-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-op-text .hint {
+  font-size: 0.78rem;
+  overflow-wrap: anywhere;
+}
+
+.token-card h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.token-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.token {
+  flex: 1;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+
+.perm-list {
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.api-table td:first-child {
+  width: 1%;
+}

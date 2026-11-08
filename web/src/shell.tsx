@@ -5,6 +5,7 @@ import {
   FileText,
   Globe,
   History,
+  KeyRound,
   LayoutGrid,
   Layers,
   Lock,
@@ -110,7 +111,10 @@ export function Sidebar({
     },
     {
       title: 'Administration',
-      items: [{ path: '/users', label: 'Users', icon: Users, admin: true }],
+      items: [
+        { path: '/users', label: 'Users', icon: Users, admin: true },
+        { path: '/api-keys', label: 'API keys', icon: KeyRound, admin: true },
+      ],
     },
   ]
   const isAdmin = user.role === 'admin'
@@ -219,6 +223,8 @@ const pageNames: Record<string, string> = {
   users: 'Users',
   account: 'Account',
   import: 'Import from NPM',
+  'api-keys': 'API keys',
+  'api-docs': 'API reference',
 }
 
 function isIP(s: string): boolean {
