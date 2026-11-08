@@ -157,10 +157,20 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/jso
   --data '{"username":"admin","password":"123456"}' "$BASE/api/auth/login" 2>/dev/null || true)"
 [ "$CODE" = 200 ] && FIRST_LOGIN=yes
 
-# The address other machines use: the first non-loopback IPv4.
-HOST_IP="$( (hostname -I 2>/dev/null | awk '{print $1}') || true)"
-[ -n "$HOST_IP" ] || HOST_IP="$( (ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null) || true)"
-[ -n "$HOST_IP" ] || HOST_IP="this-machine"
+# The address other machines use: this machine's IP on its default route.
+host_ip() {
+  local ip="" ifc=""
+  if command -v ip >/dev/null 2>&1; then
+    ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)"
+  fi
+  [ -n "$ip" ] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [ -z "$ip" ] && command -v route >/dev/null 2>&1; then # macOS
+    ifc="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')"
+    [ -n "$ifc" ] && ip="$(ipconfig getifaddr "$ifc" 2>/dev/null)"
+  fi
+  printf '%s' "${ip:-localhost}"
+}
+HOST_IP="$(host_ip || true)"
 PROJECT="$(docker compose config --format json 2>/dev/null | sed -n 's/^ *"name": *"\([^"]*\)".*/\1/p' | head -1)"
 
 say "Switchyard is up."
