@@ -12,6 +12,7 @@ import { ImportPage } from './importer'
 import { Dashboard } from './dashboard'
 import { HoneypotPage } from './honeypot'
 import { ApiDocsPage, ApiKeysPage } from './apikeys'
+import { WildcardCard } from './wildcards'
 import { Logo, Sidebar, Topbar } from './shell'
 import { ArrowRight, TriangleAlert } from 'lucide-react'
 import { applyAccent } from './accent'
@@ -199,7 +200,13 @@ function App() {
         onChanged={refreshPending}
       />
     )
-  else if (route === '/certificates') body = <Certificates canEdit={canEdit} />
+  else if (route === '/certificates')
+    body = (
+      <div className="stack">
+        <WildcardCard canEdit={canEdit} onChanged={refreshPending} />
+        <Certificates canEdit={canEdit} />
+      </div>
+    )
   else if (route === '/dns')
     body = (
       <DNSPage isAdmin={user.role === 'admin'} onChanged={refreshPending} />

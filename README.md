@@ -58,6 +58,27 @@ are taken (handy for testing next to Nginx Proxy Manager), builds and
 starts everything, and prints the address and first sign-in. Run it again
 to update; your settings and data are kept.
 
+## New hosts and Certificate Transparency
+
+Every certificate is published in public Certificate Transparency logs, and
+scanners watch them: a new host is probed within minutes of getting its
+certificate. Two features help.
+
+**Wildcard certificates** (Certificates page). Add a domain such as
+`example.com` with its DNS provider, then apply. Switchyard obtains one
+certificate for `*.example.com` (and `example.com`) with the DNS challenge,
+and every host one level under the domain (`app.example.com`, not
+`a.b.example.com`) uses it instead of a certificate of its own, so new hosts
+never appear in the logs. The host editor shows when a host is covered.
+
+**Hold behind the decoy** (host editor, "Going live"). A host that needs its
+own certificate can start on hold: it gets its domains and certificate as
+usual, but every request gets the honeypot decoy (and honeypot points, so
+the scanners that rush in get banned) instead of your service. When the hold
+ends (48 hours by default), or on **Release now**, Switchyard takes the decoy
+off in place within 30 seconds: no apply, and other staged changes stay
+staged.
+
 ## UniFi firewall
 
 Switchyard can keep its ban list in a UniFi gateway, so banned addresses are

@@ -59,6 +59,9 @@ type CertRow struct {
 	Issuer    string     `json:"issuer,omitempty"`
 	NotAfter  *time.Time `json:"not_after,omitempty"`
 	LastError *CertError `json:"last_error,omitempty"`
+	// Wildcard is the shared certificate covering the domain (e.g.
+	// "*.example.com"); the status is then that certificate's.
+	Wildcard string `json:"wildcard,omitempty"`
 }
 
 // Snapshot is the result of the last check, for the health page.
@@ -212,6 +215,10 @@ func (m *Monitor) Certs(ctx context.Context) ([]CertRow, error) {
 	if err != nil {
 		return nil, err
 	}
+	wildcards, err := m.Store.ListWildcards(ctx)
+	if err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	errsByName := make(map[string]CertError, len(m.certErrs))
 	for k, v := range m.certErrs {
@@ -227,7 +234,12 @@ func (m *Monitor) Certs(ctx context.Context) ([]CertRow, error) {
 		for _, d := range h.Domains {
 			st := certs.For(d, all, now)
 			r := CertRow{Domain: d, HostID: h.ID, TLSMode: h.TLSMode, State: st.State, Issuer: st.Issuer, NotAfter: st.NotAfter}
-			if e, ok := errsByName[d]; ok && (st.NotAfter == nil || e.At.After(now.Add(-24*time.Hour))) {
+			errName := d
+			if w, ok := store.CoveringWildcard(wildcards, d); ok && (h.TLSMode == store.TLSAuto || h.TLSMode == store.TLSDNS) {
+				r.Wildcard = "*." + w.Domain
+				errName = r.Wildcard // its errors are the wildcard's
+			}
+			if e, ok := errsByName[errName]; ok && (st.NotAfter == nil || e.At.After(now.Add(-24*time.Hour))) {
 				e := e
 				r.LastError = &e
 			}

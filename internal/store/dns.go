@@ -156,6 +156,11 @@ func (s *Store) DeleteDNSProvider(ctx context.Context, id int64, username string
 	if p.HostCount > 0 || p.FolderCount > 0 {
 		return ConflictError(fmt.Sprintf("“%s” is used by %d host(s) and %d folder(s). Change them first.", p.Name, p.HostCount, p.FolderCount))
 	}
+	if n, err := s.wildcardsUsingProvider(ctx, id); err != nil {
+		return err
+	} else if n > 0 {
+		return ConflictError(fmt.Sprintf("“%s” is used by %d wildcard certificate(s). Remove or change them first.", p.Name, n))
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

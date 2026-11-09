@@ -151,6 +151,23 @@ func main() {
 	}
 	defer func() { _ = hitsDB.Close() }()
 	retainDays, _ := strconv.Atoi(os.Getenv("CPM_HIT_RETENTION_DAYS"))
+	// Hosts on hold go live by themselves when their hold ends.
+	go func() {
+		t := time.NewTicker(30 * time.Second)
+		defer t.Stop()
+		for {
+			if n, err := applier.ReleaseHolds(ctx, time.Now()); err != nil && ctx.Err() == nil {
+				logger.Warn("releasing hosts from hold", "err", err)
+			} else if n > 0 {
+				logger.Info("hosts released from hold", "count", n)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+		}
+	}()
 	// Bans also go to a UniFi firewall, if one is set up (Honeypot page).
 	unifiSync := &unifi.Syncer{Store: st, Box: box, Log: logger}
 	go unifiSync.Run(ctx)

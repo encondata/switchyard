@@ -161,6 +161,7 @@ func (s *srv) routes() []route {
 		with(r(ap, "hosts.update", "PUT", "/api/hosts/{id}", "Hosts", roleEditor, true, true, "Replace a host's settings", s.handleSaveHost), store.Host{}, store.Host{}),
 		r(ap, "hosts.delete", "DELETE", "/api/hosts/{id}", "Hosts", roleEditor, true, true, "Delete a host", s.handleDeleteHost),
 		with(r(ap, "hosts.move", "POST", "/api/hosts/{id}/move", "Hosts", roleEditor, true, true, "Move a host to a folder (null for none)", s.handleMoveHost), moveBody{}, nil),
+		with(r(ap, "hosts.release", "POST", "/api/hosts/{id}/release", "Hosts", roleEditor, true, true, "Take a host off its decoy now (live at once, no apply)", s.handleReleaseHost), nil, store.Host{}),
 
 		// Folders.
 		with(r(ap, "folders.list", "GET", "/api/folders", "Folders", roleViewer, true, false, "List folders", s.handleListFolders), nil, []store.Folder{}),
@@ -189,6 +190,10 @@ func (s *srv) routes() []route {
 		r(ap, "dns.delete", "DELETE", "/api/dns-providers/{id}", "DNS", roleAdmin, true, true, "Delete a DNS provider", s.handleDeleteDNSProvider),
 		r(ap, "dns.verify", "POST", "/api/dns-providers/{id}/verify", "DNS", roleEditor, true, true, "Check a DNS provider's token with the provider", s.handleVerifyDNSProvider),
 		r(ap, "certs.list", "GET", "/api/certificates", "Certificates", roleViewer, true, false, "Certificate status for every domain", s.handleCertificates),
+		with(r(ap, "wildcards.list", "GET", "/api/wildcards", "Certificates", roleViewer, true, false, "Wildcard certificates, their status and the hosts they cover", s.handleListWildcards), nil, []wildcardView{}),
+		with(r(ap, "wildcards.create", "POST", "/api/wildcards", "Certificates", roleEditor, true, true, "Add a wildcard certificate (staged; apply to obtain it)", s.handleSaveWildcard), store.WildcardCert{}, store.WildcardCert{}),
+		with(r(ap, "wildcards.update", "PUT", "/api/wildcards/{id}", "Certificates", roleEditor, true, true, "Change a wildcard certificate", s.handleSaveWildcard), store.WildcardCert{}, store.WildcardCert{}),
+		r(ap, "wildcards.delete", "DELETE", "/api/wildcards/{id}", "Certificates", roleEditor, true, true, "Remove a wildcard certificate (covered hosts get their own again)", s.handleDeleteWildcard),
 		r(ap, "certs.retry", "POST", "/api/certificates/retry", "Certificates", roleEditor, true, true, "Retry failed certificates now", s.handleRetryCerts),
 
 		// Applying config.

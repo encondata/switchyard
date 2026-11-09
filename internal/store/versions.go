@@ -105,7 +105,7 @@ func (s *Store) PreviousAppliedConfig(ctx context.Context, n int64) (ConfigVersi
 func (s *Store) ChangesSince(ctx context.Context, t time.Time) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_log WHERE at > ? AND entity IN
-		('host', 'folder', 'access_policy', 'never_ban', 'dns_provider', 'trap_path', 'setting')
+		('host', 'folder', 'access_policy', 'never_ban', 'dns_provider', 'trap_path', 'setting', 'wildcard')
 		AND action NOT IN ('sign_in', 'sign_in_failed')`, t.UTC()).Scan(&n)
 	return n, err
 }

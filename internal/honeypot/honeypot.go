@@ -56,7 +56,9 @@ func globToRegexp(p string) *regexp.Regexp {
 // Score returns the points for one honeypot hit. Trap hits carry the score
 // of the trap Caddy matched ("trap:<score>").
 func Score(h hits.Hit, settings store.HoneypotSettings, traps []store.TrapPath) int {
-	if h.Reason == "catchall" {
+	if h.Reason == "catchall" || h.Reason == "hold" {
+		// "hold": a host still behind its decoy, which only scanners (who
+		// found its new certificate in the CT logs) know about yet.
 		return settings.CatchallScore
 	}
 	if v, ok := strings.CutPrefix(h.Reason, "trap:"); ok {

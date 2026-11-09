@@ -108,7 +108,15 @@ export function Certificates({ canEdit }: { canEdit: boolean }) {
                   </td>
                   <td>
                     {r.issuer ?? <span className="hint">—</span>}
-                    <div className="hint">{modeLabel[r.tls_mode]}</div>
+                    <div className="hint">
+                      {r.wildcard ? (
+                        <>
+                          Wildcard <span className="mono">{r.wildcard}</span>
+                        </>
+                      ) : (
+                        modeLabel[r.tls_mode]
+                      )}
+                    </div>
                   </td>
                   <td>
                     <span className={`badge cert-${r.state}`}>

@@ -11,6 +11,7 @@ import {
   type AccessPolicy,
   type CertStatus,
   type DNSProvider,
+  type WildcardView,
   type HeaderRule,
   type Folder,
   type Host,
@@ -654,6 +655,38 @@ export function HostList({
                             ) : (
                               'Disabled'
                             )}
+                            {h.hold_until && (
+                              <div className="hold-cell">
+                                <span
+                                  className="badge hold-badge"
+                                  title="Serving the honeypot decoy while its new certificate draws scanners"
+                                >
+                                  Decoy until{' '}
+                                  {new Date(h.hold_until).toLocaleString(
+                                    undefined,
+                                    {
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    },
+                                  )}
+                                </span>
+                                {canEdit && (
+                                  <button
+                                    className="link"
+                                    onClick={() =>
+                                      run(
+                                        () => api.releaseHost(h.id),
+                                        `Released ${h.domains[0]}: it's live now.`,
+                                      )
+                                    }
+                                  >
+                                    Release now
+                                  </button>
+                                )}
+                              </div>
+                            )}
                           </td>
                           {canEdit && (
                             <td>
@@ -718,8 +751,18 @@ export function HostEditor({
   const [error, setError] = useState<string | null>(null)
   const [fields, setFields] = useState<Record<string, string>>({})
   const [busy, setBusy] = useState(false)
+  const [wildcards, setWildcards] = useState<WildcardView[]>([])
+  // Hold: on/off and its length; the time is set when the host is saved.
+  const [holdOn, setHoldOn] = useState<boolean | null>(null)
+  const [holdHours, setHoldHours] = useState(48)
+  const [holdEdited, setHoldEdited] = useState(false)
+  const [releaseInfo, setReleaseInfo] = useState<string | null>(null)
 
   useEffect(() => {
+    api
+      .wildcards()
+      .then(setWildcards)
+      .catch(() => undefined)
     Promise.all([api.folders(), api.policies(), api.dnsProviders()])
       .then(([f, p, d]) => {
         setFolders(f)
@@ -761,9 +804,16 @@ export function HostEditor({
     setError(null)
     setFields({})
     try {
+      const on = holdOn ?? host.hold_until !== null
+      const hold_until = !on
+        ? null
+        : host.hold_until && !holdEdited
+          ? host.hold_until
+          : new Date(Date.now() + holdHours * 3600_000).toISOString()
       await api.saveHost({
         ...host,
         domains: domains.split(/[\s,]+/).filter(Boolean),
+        hold_until,
       })
       onSaved()
     } catch (err) {
@@ -774,7 +824,42 @@ export function HostEditor({
     }
   }
 
+  async function releaseNow() {
+    if (!host?.id) return
+    setError(null)
+    try {
+      const h = await api.releaseHost(host.id)
+      setHost(h)
+      setHoldOn(false)
+      setReleaseInfo('Released: the host is live now (no apply needed).')
+    } catch (err) {
+      setError(message(err))
+    }
+  }
+
   const tls = host.tls_mode !== 'off'
+  const names = domains.split(/[\s,]+/).filter(Boolean)
+  const coveredBy = (d: string) =>
+    wildcards.find((w) => {
+      const n = d.toLowerCase()
+      const label = n.endsWith('.' + w.domain)
+        ? n.slice(0, -w.domain.length - 1)
+        : null
+      return (
+        (n === w.domain && w.include_apex) ||
+        n === '*.' + w.domain ||
+        (label !== null &&
+          label !== '' &&
+          label !== '*' &&
+          !label.includes('.'))
+      )
+    })
+  const covered = names.filter((d) => coveredBy(d))
+  const ownCert =
+    (host.tls_mode === 'auto' || host.tls_mode === 'dns') &&
+    names.some((d) => !coveredBy(d))
+  const holdActive = holdOn ?? host.hold_until !== null
+  const heldNow = !!host.id && host.hold_until !== null
   const inherited = effectivePolicies(
     { folder_id: host.folder_id, policy_ids: [] },
     folders,
@@ -989,6 +1074,57 @@ export function HostEditor({
       )}
 
       <fieldset>
+        <legend>Going live</legend>
+        {heldNow && (
+          <div className="notice">
+            <strong>
+              On hold until {new Date(host.hold_until!).toLocaleString()}.
+            </strong>{' '}
+            Requests get the honeypot decoy (and honeypot points) instead of
+            this host; it goes live by itself then.{' '}
+            <button
+              type="button"
+              className="link"
+              onClick={() => void releaseNow()}
+            >
+              Release now
+            </button>
+          </div>
+        )}
+        {releaseInfo && <p className="success">{releaseInfo}</p>}
+        <label className="inline">
+          <input
+            type="checkbox"
+            checked={holdActive}
+            onChange={(e) => {
+              setHoldOn(e.target.checked)
+              setHoldEdited(true)
+            }}
+          />
+          Hold behind the decoy for
+          <input
+            type="number"
+            min={1}
+            max={720}
+            className="small-num"
+            disabled={!holdActive}
+            value={holdHours}
+            onChange={(e) => {
+              setHoldHours(Number(e.target.value))
+              setHoldEdited(true)
+            }}
+          />
+          hours{heldNow ? ' from now' : ''}
+        </label>
+        <p className="hint">
+          {ownCert
+            ? 'This host gets a certificate of its own, which is published in the public CT logs: scanners arrive within minutes. Held, they get the decoy (and are banned by the honeypot) while the real service stays out of reach; then it goes live by itself. '
+            : 'Hosts covered by a wildcard certificate aren’t announced in the CT logs, so a hold matters less. '}
+          The hold counts from saving, so apply soon after.
+        </p>
+      </fieldset>
+
+      <fieldset>
         <legend>HTTPS</legend>
         <label>
           Certificate
@@ -1010,6 +1146,16 @@ export function HostEditor({
             <option value="off">Off — plain HTTP on port 80 only</option>
           </select>
         </label>
+        {covered.length > 0 &&
+          (host.tls_mode === 'auto' || host.tls_mode === 'dns') && (
+            <p className="success">
+              Covered by the wildcard certificate{' '}
+              <span className="mono">*.{coveredBy(covered[0])!.domain}</span>
+              {covered.length < names.length
+                ? ` for ${covered.join(', ')}; the other names get their own certificate.`
+                : ': no certificate of its own, so it won’t appear in the public CT logs.'}
+            </p>
+          )}
         {host.tls_mode === 'dns' && (
           <label>
             DNS provider

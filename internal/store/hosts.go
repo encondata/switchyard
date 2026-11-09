@@ -69,10 +69,15 @@ type Host struct {
 	TrapExceptions []string `json:"trap_exceptions"`
 	// RateLimitEvents requests per RateLimitWindow seconds per client IP;
 	// 0 means use the nearest folder's limit (or none).
-	RateLimitEvents int       `json:"rate_limit_events"`
-	RateLimitWindow int       `json:"rate_limit_window"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	RateLimitEvents int `json:"rate_limit_events"`
+	RateLimitWindow int `json:"rate_limit_window"`
+	// HoldUntil, while set, puts the host behind the honeypot decoy: it
+	// keeps its domains and gets its certificate, but every request gets
+	// the decoy (and honeypot points). At this time CPM takes the decoy
+	// off in place and clears it. Nil means live.
+	HoldUntil *time.Time `json:"hold_until"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
 
 // Upstream is a backend a proxy host forwards to.
@@ -320,22 +325,27 @@ var ErrDomainTaken = errors.New("domain already used by another host")
 const hostColumns = `id, type, enabled, upstreams, load_balancing, tls_mode, force_https, hsts,
 	compression, redirect_to, redirect_code, preserve_path, notes, folder_id, acme_challenge, dns_provider_id,
 	request_headers, response_headers, health_check_path, health_check_interval, advanced_json, trap_exceptions,
-	rate_limit_events, rate_limit_window, created_at, updated_at`
+	rate_limit_events, rate_limit_window, hold_until, created_at, updated_at`
 
 func scanHost(row interface{ Scan(...any) error }) (Host, error) {
 	var h Host
 	var upstreams string
 	var folder, dnsProvider sql.NullInt64
 	var challenge, reqHeaders, respHeaders, trapExc string
+	var hold sql.NullTime
 	err := row.Scan(&h.ID, &h.Type, &h.Enabled, &upstreams, &h.LoadBalancing, &h.TLSMode, &h.ForceHTTPS,
 		&h.HSTS, &h.Compression, &h.RedirectTo, &h.RedirectCode, &h.PreservePath, &h.Notes, &folder,
 		&challenge, &dnsProvider, &reqHeaders, &respHeaders, &h.HealthCheckPath, &h.HealthCheckInterval,
-		&h.AdvancedJSON, &trapExc, &h.RateLimitEvents, &h.RateLimitWindow, &h.CreatedAt, &h.UpdatedAt)
+		&h.AdvancedJSON, &trapExc, &h.RateLimitEvents, &h.RateLimitWindow, &hold, &h.CreatedAt, &h.UpdatedAt)
 	if err != nil {
 		return h, err
 	}
 	if folder.Valid {
 		h.FolderID = &folder.Int64
+	}
+	if hold.Valid {
+		t := hold.Time.UTC()
+		h.HoldUntil = &t
 	}
 	if dnsProvider.Valid {
 		h.DNSProviderID = &dnsProvider.Int64
@@ -505,13 +515,13 @@ func (s *Store) SaveHostAs(ctx context.Context, h Host, username string, isAdmin
 	args := []any{h.Type, h.Enabled, string(upstreams), h.LoadBalancing, tlsMode, h.ForceHTTPS, h.HSTS,
 		h.Compression, h.RedirectTo, h.RedirectCode, h.PreservePath, h.Notes, h.FolderID, challenge, h.DNSProviderID,
 		encodeHeaders(h.RequestHeaders), encodeHeaders(h.ResponseHeaders), h.HealthCheckPath, h.HealthCheckInterval,
-		h.AdvancedJSON, mustJSON(h.TrapExceptions), h.RateLimitEvents, h.RateLimitWindow}
+		h.AdvancedJSON, mustJSON(h.TrapExceptions), h.RateLimitEvents, h.RateLimitWindow, holdArg(h.HoldUntil)}
 	if h.ID == 0 {
 		res, err := tx.ExecContext(ctx, `INSERT INTO hosts (type, enabled, upstreams, load_balancing, tls_mode,
 			force_https, hsts, compression, redirect_to, redirect_code, preserve_path, notes, folder_id,
 			acme_challenge, dns_provider_id, request_headers, response_headers, health_check_path,
-			health_check_interval, advanced_json, trap_exceptions, rate_limit_events, rate_limit_window)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
+			health_check_interval, advanced_json, trap_exceptions, rate_limit_events, rate_limit_window, hold_until)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args...)
 		if err != nil {
 			return Host{}, err
 		}
@@ -523,7 +533,8 @@ func (s *Store) SaveHostAs(ctx context.Context, h Host, username string, isAdmin
 			tls_mode = ?, force_https = ?, hsts = ?, compression = ?, redirect_to = ?, redirect_code = ?,
 			preserve_path = ?, notes = ?, folder_id = ?, acme_challenge = ?, dns_provider_id = ?,
 			request_headers = ?, response_headers = ?, health_check_path = ?, health_check_interval = ?,
-			advanced_json = ?, trap_exceptions = ?, rate_limit_events = ?, rate_limit_window = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			advanced_json = ?, trap_exceptions = ?, rate_limit_events = ?, rate_limit_window = ?, hold_until = ?,
+			updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 			append(args, h.ID)...); err != nil {
 			return Host{}, err
 		}
@@ -614,4 +625,47 @@ func checkRateLimit(events, window int) string {
 		return "a window of 1 to 3600 seconds"
 	}
 	return ""
+}
+
+func holdArg(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC()
+}
+
+// HoldsEnded returns hosts whose hold has ended (HoldUntil at or before now).
+func (s *Store) HoldsEnded(ctx context.Context, now time.Time) ([]Host, error) {
+	all, err := s.ListHosts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []Host
+	for _, h := range all {
+		if h.HoldUntil != nil && !h.HoldUntil.After(now) {
+			out = append(out, h)
+		}
+	}
+	return out, nil
+}
+
+// EndHold clears a host's hold (it's live from now on) and records who or
+// what released it.
+func (s *Store) EndHold(ctx context.Context, id int64, by string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE hosts SET hold_until = NULL WHERE id = ? AND hold_until IS NOT NULL`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	if err := audit(ctx, tx, by, "release_hold", "host", id, nil, nil); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

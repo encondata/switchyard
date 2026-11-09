@@ -73,8 +73,28 @@ export type Host = {
   trap_exceptions: string[]
   rate_limit_events: number
   rate_limit_window: number
+  /** While set, the host serves the honeypot decoy until this time. */
+  hold_until: string | null
   created_at?: string
   updated_at?: string
+}
+
+/** A shared *.domain certificate; hosts it covers get none of their own. */
+export type WildcardCert = {
+  id: number
+  domain: string
+  dns_provider_id: number
+  include_apex: boolean
+}
+
+export type WildcardView = WildcardCert & {
+  status: {
+    domain: string
+    state: CertState
+    issuer?: string
+    not_after?: string
+  }
+  hosts: { id: number; domain: string }[]
 }
 
 export type CertState =
@@ -266,6 +286,8 @@ export type CertRow = {
   issuer?: string
   not_after?: string
   last_error?: { message: string; at: string }
+  /** The shared wildcard certificate covering this domain, if any. */
+  wildcard?: string
 }
 
 export type Country = { code: string; name: string }
@@ -731,6 +753,15 @@ export const api = {
       '/api/crowdsec',
       { enabled, api_url, api_key },
     ),
+  wildcards: () => request<WildcardView[]>('GET', '/api/wildcards'),
+  saveWildcard: (w: Omit<WildcardCert, 'id'> & { id?: number }) =>
+    w.id
+      ? request<WildcardCert>('PUT', `/api/wildcards/${w.id}`, w)
+      : request<WildcardCert>('POST', '/api/wildcards', w),
+  deleteWildcard: (id: number) =>
+    request<void>('DELETE', `/api/wildcards/${id}`),
+  releaseHost: (id: number) =>
+    request<Host>('POST', `/api/hosts/${id}/release`),
   apiKeys: () => request<APIKey[]>('GET', '/api/keys'),
   keyOperations: () => request<APIOperation[]>('GET', '/api/keys/operations'),
   createAPIKey: (k: APIKeyInput) =>
@@ -864,6 +895,7 @@ export function newHost(): Host {
     trap_exceptions: [],
     rate_limit_events: 0,
     rate_limit_window: 60,
+    hold_until: null,
   }
 }
 

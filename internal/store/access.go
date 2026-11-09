@@ -603,6 +603,8 @@ type AccessState struct {
 	NeverBan []string
 	Honeypot HoneypotState
 	CrowdSec CrowdSecSettings
+	// Wildcards are the shared wildcard certificates.
+	Wildcards []WildcardCert
 }
 
 // LoadAccessState reads folders, policies and the never-block list.
@@ -632,7 +634,10 @@ func (s *Store) LoadAccessState(ctx context.Context) (AccessState, error) {
 	if st.Honeypot, err = s.LoadHoneypotState(ctx); err != nil {
 		return st, err
 	}
-	st.CrowdSec, err = s.CrowdSec(ctx)
+	if st.CrowdSec, err = s.CrowdSec(ctx); err != nil {
+		return st, err
+	}
+	st.Wildcards, err = s.ListWildcards(ctx)
 	return st, err
 }
 

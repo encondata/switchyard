@@ -17,6 +17,12 @@
 //   - tls automation: an internal-CA policy for hosts with TLS "internal";
 //     everything else uses Caddy's default ACME issuers. On-demand TLS is
 //     never enabled.
+//   - wildcard certificates: each is obtained explicitly (DNS challenge);
+//     names they cover are in skip_certificates, so those hosts never get a
+//     certificate of their own (and never appear in CT logs).
+//   - hosts on hold: a decoy route (@id cpm_hold_<id>_<server>) before the
+//     host's own route serves the honeypot response; CPM deletes it in
+//     place when the hold ends.
 package compiler
 
 import (
@@ -92,28 +98,54 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 	sort.Slice(enabled, func(i, j int) bool { return enabled[i].ID < enabled[j].ID })
 
 	var httpRoutes, httpsRoutes []any
-	var internalSubjects []string
+	var internalSubjects, skipCerts, automate []string
 	dnsSubjects := map[int64][]string{}
+	// Shared wildcard certificates are obtained whether or not a host uses
+	// them yet (a new host is then covered from its first request).
+	for _, w := range access.Wildcards {
+		dnsSubjects[w.DNSProviderID] = append(dnsSubjects[w.DNSProviderID], w.Names()...)
+		automate = append(automate, w.Names()...)
+	}
+	hp := access.Honeypot
 	for _, h := range enabled {
-		if h.TLSMode == store.TLSDNS {
+		// Names a wildcard covers use it, not a certificate of their own.
+		var own []string
+		for _, d := range h.Domains {
+			if _, ok := store.CoveringWildcard(access.Wildcards, d); ok && (h.TLSMode == store.TLSAuto || h.TLSMode == store.TLSDNS) {
+				skipCerts = append(skipCerts, d)
+				continue
+			}
+			own = append(own, d)
+		}
+		if h.TLSMode == store.TLSDNS && len(own) > 0 {
 			pid, ok := access.EffectiveDNSProvider(h)
 			if !ok {
-				return nil, fmt.Errorf("compiler: host %d (%s) uses the DNS challenge but has no DNS provider", h.ID, strings.Join(h.Domains, ", "))
+				return nil, fmt.Errorf("compiler: host %d (%s) uses the DNS challenge but has no DNS provider", h.ID, strings.Join(own, ", "))
 			}
-			dnsSubjects[pid] = append(dnsSubjects[pid], h.Domains...)
+			dnsSubjects[pid] = append(dnsSubjects[pid], own...)
 		}
 		route, err := hostRoute(h, access, s)
 		if err != nil {
 			return nil, fmt.Errorf("compiler: host %d: %w", h.ID, err)
 		}
+		held := h.HoldUntil != nil
 		if h.TLSMode == store.TLSOff {
+			if held {
+				httpRoutes = append(httpRoutes, holdRoute(h, "http", hp.Settings.Response))
+			}
 			httpRoutes = append(httpRoutes, route)
 			continue
+		}
+		if held {
+			httpsRoutes = append(httpsRoutes, holdRoute(h, "https", hp.Settings.Response))
 		}
 		httpsRoutes = append(httpsRoutes, route)
 		if h.ForceHTTPS {
 			httpRoutes = append(httpRoutes, redirectToHTTPSRoute(h))
 		} else {
+			if held {
+				httpRoutes = append(httpRoutes, holdRoute(h, "http", hp.Settings.Response))
+			}
 			plain, _ := hostRoute(h, access, s) // same handlers, also on :80
 			plain["@id"] = fmt.Sprintf("cpm_host_%d_http", h.ID)
 			httpRoutes = append(httpRoutes, plain)
@@ -122,7 +154,6 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 			internalSubjects = append(internalSubjects, h.Domains...)
 		}
 	}
-	hp := access.Honeypot
 	if hp.Settings.Enabled {
 		httpRoutes = append(httpRoutes, catchallRoute("http", hp.Settings.Response))
 		httpsRoutes = append(httpsRoutes, catchallRoute("https", hp.Settings.Response))
@@ -167,7 +198,7 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 						"listen": []string{":80"},
 						"routes": httpRoutes,
 					},
-					HTTPSServer: httpsServer(httpsRoutes, hp.Settings.Enabled),
+					HTTPSServer: httpsServer(httpsRoutes, hp.Settings.Enabled, dedupe(skipCerts)),
 				},
 			},
 			// The internal CA's root can't be installed into a container's
@@ -195,7 +226,7 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 			// split-horizon (common for internal names).
 			"resolvers": []string{"1.1.1.1", "1.0.0.1"},
 		}}
-		policies = append(policies, obj{"subjects": dnsSubjects[id], "issuers": []any{iss}})
+		policies = append(policies, obj{"subjects": dedupe(dnsSubjects[id]), "issuers": []any{iss}})
 	}
 	if len(internalSubjects) > 0 {
 		policies = append(policies, obj{
@@ -221,12 +252,16 @@ func Compile(s Settings, hosts []store.Host, access store.AccessState) ([]byte, 
 	if hp.Settings.Enabled {
 		// Make sure the honeypot's internal-CA certificate exists even though
 		// no host matcher names it.
+		automate = append(automate, HoneypotSNI)
+	}
+	if len(automate) > 0 {
+		// Certificates no host matcher names: the honeypot's, and wildcards.
 		tlsApp, _ := cfg["apps"].(obj)["tls"].(obj)
 		if tlsApp == nil {
 			tlsApp = obj{}
 			cfg["apps"].(obj)["tls"] = tlsApp
 		}
-		tlsApp["certificates"] = obj{"automate": []string{HoneypotSNI}}
+		tlsApp["certificates"] = obj{"automate": dedupe(automate)}
 	}
 	logs := obj{}
 	if s.TLSLogFile != "" {
@@ -527,11 +562,16 @@ func banRoute(server string, bans, never []string) obj {
 	}
 }
 
-func httpsServer(routes []any, honeypot bool) obj {
+func httpsServer(routes []any, honeypot bool, skipCerts []string) obj {
+	auto := obj{"disable_redirects": true}
+	if len(skipCerts) > 0 {
+		// Covered by a wildcard certificate: served with it, never their own.
+		auto["skip_certificates"] = skipCerts
+	}
 	srv := obj{
 		"listen":          []string{":443"},
 		"routes":          routes,
-		"automatic_https": obj{"disable_redirects": true},
+		"automatic_https": auto,
 	}
 	if honeypot {
 		// Unknown names and bare-IP requests get the honeypot certificate,
@@ -539,6 +579,23 @@ func httpsServer(routes []any, honeypot bool) obj {
 		srv["tls_connection_policies"] = []any{obj{"fallback_sni": HoneypotSNI, "default_sni": HoneypotSNI}}
 	}
 	return srv
+}
+
+// HoldRouteID is the @id of a held host's decoy route on a server.
+func HoldRouteID(hostID int64, server string) string {
+	return fmt.Sprintf("cpm_hold_%d_%s", hostID, server)
+}
+
+// holdRoute answers a held host's domains with the honeypot decoy, tagged
+// "hold" for the scorer. It comes before the host's own route, which stays
+// in the config so the certificate is still obtained.
+func holdRoute(h store.Host, server, response string) obj {
+	return obj{
+		"@id":      HoldRouteID(h.ID, server),
+		"match":    []any{obj{"host": h.Domains}},
+		"handle":   honeypotHandlers("hold", response),
+		"terminal": true,
+	}
 }
 
 // honeypotHandlers tag the request for the scorer and serve fake,

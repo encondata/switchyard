@@ -142,6 +142,7 @@ can't use it. Generated from `/api/openapi.json`.
 | `GET /api/hosts/{id}` | Get a host | `hosts.get` | viewer or above |
 | `PUT /api/hosts/{id}` | Replace a host's settings | `hosts.update` | editor or admin |
 | `POST /api/hosts/{id}/move` | Move a host to a folder (null for none) | `hosts.move` | editor or admin |
+| `POST /api/hosts/{id}/release` | Take a host off its decoy now (live at once, no apply) | `hosts.release` | editor or admin |
 
 ### Folders
 
@@ -183,6 +184,10 @@ can't use it. Generated from `/api/openapi.json`.
 |---|---|---|---|
 | `GET /api/certificates` | Certificate status for every domain | `certs.list` | viewer or above |
 | `POST /api/certificates/retry` | Retry failed certificates now | `certs.retry` | editor or admin |
+| `GET /api/wildcards` | Wildcard certificates, their status and the hosts they cover | `wildcards.list` | viewer or above |
+| `POST /api/wildcards` | Add a wildcard certificate (staged; apply to obtain it) | `wildcards.create` | editor or admin |
+| `DELETE /api/wildcards/{id}` | Remove a wildcard certificate (covered hosts get their own again) | `wildcards.delete` | editor or admin |
+| `PUT /api/wildcards/{id}` | Change a wildcard certificate | `wildcards.update` | editor or admin |
 
 ### Config
 

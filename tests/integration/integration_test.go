@@ -175,6 +175,57 @@ func TestEndToEnd(t *testing.T) {
 	})
 	t.Logf("secure.test certificate issued by %q", issuer)
 
+	// --- hold: a new host serves the honeypot decoy until it's released,
+	// and goes live in place (no apply) without drift or pending changes
+	held := e.addHost(`{"type":"proxy","enabled":true,"domains":["held.test"],"tls_mode":"off","upstreams":[{"host":"whoami"}],"hold_until":"2099-01-01T00:00:00Z"}`)
+	e.apply()
+	if c, body := e.get("held.test", "/"); c != 200 || !strings.Contains(body, "sign in") || strings.Contains(body, "Hostname:") {
+		t.Fatalf("held host = %d %q, want the decoy", c, body)
+	}
+	if code, body := e.call("POST", fmt.Sprintf("/api/hosts/%d/release", held), ""); code != 200 {
+		t.Fatalf("release = %d %s", code, body)
+	}
+	e.waitFor("held.test to go live", 10*time.Second, func() bool { c, b := e.get("held.test", "/"); return c == 200 && strings.Contains(b, "Hostname:") })
+	var pv struct {
+		Pending bool `json:"pending"`
+		Drift   bool `json:"drift"`
+	}
+	if e.json("GET", "/api/config/preview", "", &pv); pv.Pending || pv.Drift {
+		t.Fatalf("after release: pending %v, drift %v (want neither)", pv.Pending, pv.Drift)
+	}
+	e.call("DELETE", fmt.Sprintf("/api/hosts/%d", held), "")
+	e.apply()
+
+	// --- wildcard certificate: Caddy takes the config (shared *.wild.test,
+	// covered host skipped). Issuance itself needs Cloudflare, so isn't
+	// checked here.
+	var dnsp struct {
+		ID int64 `json:"id"`
+	}
+	if code := e.json("POST", "/api/dns-providers", `{"name":"Test CF","type":"cloudflare","api_token":"abcdefghijklmnopqrstuvwxyz0123456789ABCD"}`, &dnsp); code != 201 {
+		t.Fatalf("create DNS provider = %d", code)
+	}
+	var wc struct {
+		ID int64 `json:"id"`
+	}
+	if code := e.json("POST", "/api/wildcards", fmt.Sprintf(`{"domain":"wild.test","dns_provider_id":%d,"include_apex":true}`, dnsp.ID), &wc); code != 201 {
+		t.Fatalf("create wildcard = %d", code)
+	}
+	covered := e.addHost(`{"type":"proxy","enabled":true,"domains":["a.wild.test"],"tls_mode":"auto","upstreams":[{"host":"whoami"}]}`)
+	e.apply()
+	var wl []struct {
+		Hosts []struct {
+			Domain string `json:"domain"`
+		} `json:"hosts"`
+	}
+	if e.json("GET", "/api/wildcards", "", &wl); len(wl) != 1 || len(wl[0].Hosts) != 1 || wl[0].Hosts[0].Domain != "a.wild.test" {
+		t.Fatalf("wildcards = %+v", wl)
+	}
+	e.call("DELETE", fmt.Sprintf("/api/hosts/%d", covered), "")
+	e.call("DELETE", fmt.Sprintf("/api/wildcards/%d", wc.ID), "")
+	e.call("DELETE", fmt.Sprintf("/api/dns-providers/%d", dnsp.ID), "")
+	e.apply()
+
 	// --- access order: deny, never-block overrides, allow-only blocks
 	var pol struct {
 		ID int64 `json:"id"`

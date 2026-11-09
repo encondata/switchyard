@@ -148,8 +148,9 @@ func (s *Service) VersionDiff(ctx context.Context, n int64) (string, int64, erro
 	return unifiedDiff(string(a), string(b), fmt.Sprintf("version %d", prev.N)), prev.N, nil
 }
 
-// SameIgnoringBans compares two configs, ignoring the ban lists, which CPM
-// updates in place between full applies (so they aren't drift).
+// SameIgnoringBans compares two configs, ignoring the ban lists and held
+// hosts' decoy routes, which CPM updates in place between full applies (so
+// they aren't drift).
 func SameIgnoringBans(a, b []byte) bool {
 	na, err1 := stripBans(a)
 	nb, err2 := stripBans(b)
@@ -163,23 +164,33 @@ func stripBans(raw []byte) ([]byte, error) {
 	if err := dec.Decode(&v); err != nil {
 		return nil, err
 	}
-	var walk func(any)
-	walk = func(n any) {
+	isHold := func(n any) bool {
+		m, ok := n.(map[string]any)
+		id, _ := m["@id"].(string)
+		return ok && strings.HasPrefix(id, "cpm_hold_")
+	}
+	var walk func(any) any
+	walk = func(n any) any {
 		switch x := n.(type) {
 		case map[string]any:
 			if id, _ := x["@id"].(string); strings.HasPrefix(id, "cpm_banlist_") {
 				x["match"] = nil
 			}
-			for _, c := range x {
-				walk(c)
+			for k, c := range x {
+				x[k] = walk(c)
 			}
 		case []any:
+			out := x[:0]
 			for _, c := range x {
-				walk(c)
+				if !isHold(c) {
+					out = append(out, walk(c))
+				}
 			}
+			return out
 		}
+		return n
 	}
-	walk(v)
+	v = walk(v)
 	return json.Marshal(v)
 }
 
@@ -222,6 +233,55 @@ func (s *Service) PushBans(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// Deleter is the admin API call for removing a config object by path.
+type Deleter interface {
+	Delete(ctx context.Context, path string) error
+}
+
+// ReleaseHolds takes hosts whose hold has ended off their decoy: their
+// decoy routes are deleted from the running config in place (no full apply,
+// so other staged changes stay staged), the result is saved for restarts,
+// and the hold is cleared so the next apply doesn't bring it back.
+func (s *Service) ReleaseHolds(ctx context.Context, now time.Time) (int, error) {
+	ended, err := s.Store.HoldsEnded(ctx, now)
+	if err != nil || len(ended) == 0 {
+		return 0, err
+	}
+	n := 0
+	for _, h := range ended {
+		if err := s.releaseHost(ctx, h.ID, "hold"); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}
+
+// ReleaseHost takes one host off its decoy now ("Release now").
+func (s *Service) ReleaseHost(ctx context.Context, id int64, by string) error {
+	return s.releaseHost(ctx, id, by)
+}
+
+func (s *Service) releaseHost(ctx context.Context, id int64, by string) error {
+	d, ok := s.Caddy.(Deleter)
+	if !ok {
+		return errors.New("this Caddy client can't delete config objects")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, srv := range []string{"http", "https"} {
+		if err := d.Delete(ctx, "/id/"+compiler.HoldRouteID(id, srv)); err != nil {
+			return fmt.Errorf("taking host %d off its decoy: %w", id, err)
+		}
+	}
+	if s.ConfigFile != "" {
+		if running, err := s.Caddy.Config(ctx); err == nil {
+			_ = writeAtomic(s.ConfigFile, running)
+		}
+	}
+	return s.Store.EndHold(ctx, id, by)
 }
 
 // Apply builds the config from the database and loads it into Caddy.

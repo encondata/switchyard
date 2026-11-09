@@ -104,6 +104,29 @@ func (c *Client) Patch(ctx context.Context, path string, value any) error {
 	return nil
 }
 
+// Delete removes the value at a config path, e.g. "/id/cpm_hold_3_https".
+// A path that doesn't exist (already gone) is not an error.
+func (c *Client) Delete(ctx context.Context, path string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, "http://localhost"+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("caddy admin: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		return nil
+	case resp.StatusCode == http.StatusNotFound,
+		resp.StatusCode == http.StatusBadRequest && strings.Contains(string(msg), "unknown object ID"):
+		return nil
+	}
+	return &LoadError{Status: resp.StatusCode, Message: strings.TrimSpace(string(msg))}
+}
+
 // LoadError is Caddy rejecting a config.
 type LoadError struct {
 	Status  int

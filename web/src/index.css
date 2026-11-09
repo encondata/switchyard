@@ -2441,3 +2441,37 @@ details summary {
 .unifi-status p {
   margin: 0;
 }
+
+/* ---------- Wildcard certificates ---------- */
+
+.wildcard-form {
+  align-items: flex-end;
+}
+
+.wildcard-input {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.wildcard-input input {
+  flex: 1;
+}
+
+.badge.cert-not_needed {
+  color: var(--muted);
+}
+
+.hold-badge {
+  color: var(--warn);
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+}
+
+.hold-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  margin-top: 0.3rem;
+}
