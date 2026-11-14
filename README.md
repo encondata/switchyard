@@ -40,6 +40,11 @@ Work tracking: Harbor Master project `CPM`.
 - **UniFi firewall sync (optional):** the ban list is kept in a UniFi
   gateway's firewall, so banned addresses are dropped before they reach
   Caddy. See [UniFi firewall](#unifi-firewall).
+- **Mail domains (Purelymail):** add a domain on a Cloudflare DNS provider
+  and Switchyard checks its DNS against Purelymail's records (MX, SPF,
+  ownership proof, three DKIM keys, DMARC), adds the missing ones, and
+  replaces records in the way (an old MX or SPF) only when you tick them.
+  Deleted records are kept in the audit log.
 - **Admin:** users with admin / editor / viewer roles, TOTP two-factor
   sign-in (can be required), sign-in rate limits, audit log, alerts, health
   page, backup and restore, NPM importer.

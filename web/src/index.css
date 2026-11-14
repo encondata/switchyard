@@ -1637,7 +1637,8 @@ details summary {
 }
 
 .secret {
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  min-width: 11rem;
   user-select: all;
 }
 
@@ -2474,4 +2475,18 @@ details summary {
   align-items: flex-start;
   gap: 0.2rem;
   margin-top: 0.3rem;
+}
+
+/* ---------- Mail domains ---------- */
+
+.mail-value {
+  overflow-wrap: anywhere;
+  min-width: 11rem;
+}
+
+.mail-conflict {
+  margin-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
 }

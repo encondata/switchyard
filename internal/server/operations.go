@@ -196,6 +196,15 @@ func (s *srv) routes() []route {
 		r(ap, "wildcards.delete", "DELETE", "/api/wildcards/{id}", "Certificates", roleEditor, true, true, "Remove a wildcard certificate (covered hosts get their own again)", s.handleDeleteWildcard),
 		r(ap, "certs.retry", "POST", "/api/certificates/retry", "Certificates", roleEditor, true, true, "Retry failed certificates now", s.handleRetryCerts),
 
+		// Mail domains: Purelymail's DNS records, kept in Cloudflare.
+		with(r(st, "mail.settings.get", "GET", "/api/mail/settings", "Mail", roleViewer, true, false, "Purelymail settings (the account's ownership proof)", s.handleGetMailSettings), nil, mailSettingsBody{}),
+		with(r(st, "mail.settings.update", "PUT", "/api/mail/settings", "Mail", roleAdmin, true, true, "Set the Purelymail ownership proof", s.handlePutMailSettings), mailSettingsBody{}, mailSettingsBody{}),
+		with(r(st, "mail.list", "GET", "/api/mail/domains", "Mail", roleViewer, true, false, "List mail domains and their last check", s.handleListMailDomains), nil, []store.MailDomain{}),
+		with(r(st, "mail.create", "POST", "/api/mail/domains", "Mail", roleEditor, true, true, "Add a mail domain and check its records (changes no DNS)", s.handleCreateMailDomain), mailDomainBody{}, mailCheck{}),
+		with(r(st, "mail.check", "GET", "/api/mail/domains/{id}/records", "Mail", roleViewer, true, false, "Compare a domain's DNS with Purelymail's records", s.handleCheckMailDomain), nil, mailCheck{}),
+		with(r(st, "mail.apply", "POST", "/api/mail/domains/{id}/records", "Mail", roleEditor, true, true, "Add missing Purelymail records; replace the conflicts named in replace", s.handleApplyMailDomain), mailApplyBody{}, mailCheck{}),
+		r(st, "mail.delete", "DELETE", "/api/mail/domains/{id}", "Mail", roleEditor, true, true, "Take a domain off the list (its DNS records stay)", s.handleDeleteMailDomain),
+
 		// Applying config.
 		with(r(ap, "config.preview", "GET", "/api/config/preview", "Config", roleViewer, true, false, "Pending changes: diff against Caddy's running config", s.handlePreview), nil, apply.Preview{}),
 		with(r(ap, "config.apply", "POST", "/api/config/apply", "Config", roleEditor, true, true, "Apply pending changes to Caddy", s.handleApply), noteBody{}, store.ConfigVersion{}),
