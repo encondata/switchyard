@@ -1,4 +1,5 @@
-// Package cloudflare checks Cloudflare API tokens for the DNS challenge.
+// Package cloudflare checks Cloudflare API tokens for the DNS challenge and
+// manages DNS records (mail domains).
 package cloudflare
 
 import (
@@ -31,15 +32,22 @@ type envelope struct {
 	Errors  []struct {
 		Message string `json:"message"`
 	} `json:"errors"`
-	Result json.RawMessage `json:"result"`
+	Result     json.RawMessage `json:"result"`
+	ResultInfo struct {
+		TotalPages int `json:"total_pages"`
+	} `json:"result_info"`
 }
 
 func get(ctx context.Context, token, path string) (envelope, error) {
-	var env envelope
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, BaseURL+path, nil)
 	if err != nil {
-		return env, err
+		return envelope{}, err
 	}
+	return send(req, token)
+}
+
+func send(req *http.Request, token string) (envelope, error) {
+	var env envelope
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := client.Do(req)
 	if err != nil {

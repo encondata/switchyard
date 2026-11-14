@@ -161,6 +161,11 @@ func (s *Store) DeleteDNSProvider(ctx context.Context, id int64, username string
 	} else if n > 0 {
 		return ConflictError(fmt.Sprintf("“%s” is used by %d wildcard certificate(s). Remove or change them first.", p.Name, n))
 	}
+	if n, err := s.mailDomainsUsingProvider(ctx, id); err != nil {
+		return err
+	} else if n > 0 {
+		return ConflictError(fmt.Sprintf("“%s” is used by %d mail domain(s). Remove them first.", p.Name, n))
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

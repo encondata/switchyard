@@ -4,6 +4,7 @@ import { ChangePassword, Login } from './auth'
 import { Changes, History } from './config'
 import { AccessPage } from './access'
 import { DNSPage } from './dns'
+import { MailPage } from './mail'
 import { Certificates, HealthPage } from './ops'
 import { HostEditor, HostList } from './hosts'
 import { AccountPage, EnrollRequired } from './account'
@@ -211,6 +212,8 @@ function App() {
     body = (
       <DNSPage isAdmin={user.role === 'admin'} onChanged={refreshPending} />
     )
+  else if (route === '/mail')
+    body = <MailPage canEdit={canEdit} isAdmin={user.role === 'admin'} />
   else if (route === '/access')
     body = <AccessPage canEdit={canEdit} onChanged={refreshPending} />
   else

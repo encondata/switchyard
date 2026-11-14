@@ -140,6 +140,54 @@ export type DNSProvider = {
   created_at: string
 }
 
+export type MailDomain = {
+  id: number
+  domain: string
+  dns_provider_id: number
+  zone_id: string
+  zone_name: string
+  /** ok, incomplete, conflict, error, or '' before the first check. */
+  status: '' | 'ok' | 'incomplete' | 'conflict' | 'error'
+  status_detail?: string
+  checked_at: string | null
+}
+
+export type CFRecord = {
+  id?: string
+  type: string
+  name: string
+  content: string
+  priority?: number
+  proxied: boolean
+}
+
+export type MailRecord = {
+  key: string
+  label: string
+  type: string
+  name: string
+  content: string
+  priority?: number
+  state: 'ok' | 'missing' | 'conflict' | 'needs_value'
+  present?: CFRecord
+  /** Deleted when this record is replaced. */
+  conflicts: CFRecord[]
+  note?: string
+}
+
+export type MailChange = {
+  key: string
+  action: 'create' | 'delete'
+  record: CFRecord
+  error?: string
+}
+
+export type MailCheck = {
+  domain: MailDomain
+  records: MailRecord[]
+  changes?: MailChange[]
+}
+
 export type TokenCheck = {
   active: boolean
   status: string
@@ -862,6 +910,23 @@ export const api = {
     request<void>('DELETE', `/api/dns-providers/${id}`),
   verifyDNSProvider: (id: number) =>
     request<TokenCheck>('POST', `/api/dns-providers/${id}/verify`),
+
+  mailSettings: () =>
+    request<{ ownership: string }>('GET', '/api/mail/settings'),
+  saveMailSettings: (ownership: string) =>
+    request<{ ownership: string }>('PUT', '/api/mail/settings', { ownership }),
+  mailDomains: () => request<MailDomain[]>('GET', '/api/mail/domains'),
+  addMailDomain: (domain: string, dns_provider_id: number) =>
+    request<MailCheck>('POST', '/api/mail/domains', {
+      domain,
+      dns_provider_id,
+    }),
+  checkMailDomain: (id: number) =>
+    request<MailCheck>('GET', `/api/mail/domains/${id}/records`),
+  applyMailDomain: (id: number, replace: string[]) =>
+    request<MailCheck>('POST', `/api/mail/domains/${id}/records`, { replace }),
+  deleteMailDomain: (id: number) =>
+    request<void>('DELETE', `/api/mail/domains/${id}`),
 }
 
 export function message(err: unknown): string {
