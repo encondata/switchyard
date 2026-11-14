@@ -61,14 +61,16 @@ function ProviderForm({
         )}
       </label>
       <div className="notice">
-        In Cloudflare: <strong>My Profile → API Tokens → Create Token</strong>,
-        with these permissions, limited to the zones CPM should manage:
+        In Cloudflare: <strong>My Profile → API Tokens → Create Token</strong>{' '}
+        (an account-owned token works too), with these permissions, limited to
+        the zones CPM should manage:
         <ul>
           <li>Zone → Zone → Read</li>
           <li>Zone → DNS → Edit</li>
         </ul>
-        The token is encrypted in CPM’s database and handed to Caddy as a file;
-        it never appears in the config, its history or diffs.
+        Not the <strong>Global API Key</strong> on the same page: it can’t be
+        used here. The token is encrypted in CPM’s database and handed to Caddy
+        as a file; it never appears in the config, its history or diffs.
       </div>
       {error && (
         <p className="error" role="alert">
@@ -215,6 +217,9 @@ export function DNSPage({
                           <span className={c.active ? 'ok' : 'bad'}>
                             Token {c.status || 'unknown'}
                           </span>
+                          {c.owner === 'account' && (
+                            <div className="hint">Account-owned token</div>
+                          )}
                           {c.zones.length > 0 && (
                             <div className="hint">
                               Zones: {c.zones.join(', ')}

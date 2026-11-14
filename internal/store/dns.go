@@ -29,6 +29,20 @@ type DNSProvider struct {
 // Cloudflare API tokens are 40 URL-safe characters; allow a little slack.
 var cfTokenRE = regexp.MustCompile(`^[A-Za-z0-9_-]{30,80}$`)
 
+// The Global API Key (37 hex characters) only works with an account email,
+// so caddy-dns and Switchyard can't use it; it's easy to copy by mistake
+// from the same Cloudflare page.
+var cfGlobalKeyRE = regexp.MustCompile(`^[0-9a-f]{37}$`)
+
+// cleanToken drops what tends to get copied along with a token.
+func cleanToken(t string) string {
+	t = strings.TrimSpace(t)
+	if len(t) > 7 && strings.EqualFold(t[:7], "bearer ") {
+		t = strings.TrimSpace(t[7:])
+	}
+	return strings.Trim(t, `"'`)
+}
+
 func purpose(id int64) string { return "dns-provider:" + strconv.FormatInt(id, 10) }
 
 // ListDNSProviders returns providers with usage counts.
@@ -74,7 +88,7 @@ func (s *Store) SaveDNSProvider(ctx context.Context, p DNSProvider, token string
 		return DNSProvider{}, ConflictError(secrets.ErrNoKey.Error())
 	}
 	p.Name = strings.TrimSpace(p.Name)
-	token = strings.TrimSpace(token)
+	token = cleanToken(token)
 	if p.Type == "" {
 		p.Type = "cloudflare"
 	}
@@ -89,6 +103,8 @@ func (s *Store) SaveDNSProvider(ctx context.Context, p DNSProvider, token string
 	}
 	if p.ID == 0 && token == "" {
 		errs["api_token"] = "paste the Cloudflare API token"
+	} else if cfGlobalKeyRE.MatchString(token) {
+		errs["api_token"] = "that's your Cloudflare Global API Key, which can't be used here: create an API token instead (My Profile → API Tokens → Create Token, “Edit zone DNS” template)"
 	} else if token != "" && !cfTokenRE.MatchString(token) {
 		errs["api_token"] = "that doesn't look like a Cloudflare API token (40 letters, digits, - or _)"
 	}
