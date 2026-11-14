@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/encondata/switchyard/internal/secrets"
 )
 
 // MailDomain is a domain whose mail is at Purelymail, with its DNS on a
@@ -24,7 +26,11 @@ type MailDomain struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
-const settingPurelymailOwnership = "purelymail_ownership"
+const (
+	settingPurelymailOwnership = "purelymail_ownership"
+	settingPurelymailKey       = "purelymail_key"
+	purelymailKeyPurpose       = "purelymail-api"
+)
 
 // NormalizeMailDomain lower-cases and checks a domain name.
 func NormalizeMailDomain(d string) (string, error) {
@@ -126,6 +132,11 @@ func (s *Store) SetMailStatus(ctx context.Context, id int64, status, detail stri
 // AuditMailRecords logs DNS records Switchyard added or deleted for a mail
 // domain (deleted records in full, so they can be put back by hand).
 func (s *Store) AuditMailRecords(ctx context.Context, id int64, username string, changes any) error {
+	return s.AuditMail(ctx, id, username, "dns_records", changes)
+}
+
+// AuditMail logs an action on a mail domain (DNS records, Purelymail).
+func (s *Store) AuditMail(ctx context.Context, id int64, username, action string, detail any) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -134,7 +145,7 @@ func (s *Store) AuditMailRecords(ctx context.Context, id int64, username string,
 	if _, err := tx.ExecContext(ctx, `UPDATE mail_domains SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, id); err != nil {
 		return err
 	}
-	if err := audit(ctx, tx, username, "dns_records", "mail_domain", id, nil, changes); err != nil {
+	if err := audit(ctx, tx, username, action, "mail_domain", id, nil, detail); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -197,4 +208,57 @@ func (s *Store) SavePurelymailOwnership(ctx context.Context, v, by string) (stri
 		return "", err
 	}
 	return v, tx.Commit()
+}
+
+// PurelymailKeySet reports whether an API key is stored.
+func (s *Store) PurelymailKeySet(ctx context.Context) (bool, error) {
+	v, err := s.GetSetting(ctx, settingPurelymailKey)
+	return v != "", err
+}
+
+// PurelymailKey decrypts the Purelymail API key ("" if none).
+func (s *Store) PurelymailKey(ctx context.Context, box *secrets.Box) (string, error) {
+	sealed, err := s.GetSetting(ctx, settingPurelymailKey)
+	if err != nil || sealed == "" {
+		return "", err
+	}
+	return box.Open(sealed, purelymailKeyPurpose)
+}
+
+// CleanPurelymailKey trims a pasted API key and checks its shape.
+func CleanPurelymailKey(k string) (string, error) {
+	k = strings.Trim(strings.TrimSpace(k), `"'`)
+	if len(k) < 10 || len(k) > 200 || strings.ContainsFunc(k, func(r rune) bool { return r <= 0x20 || r > 0x7e }) {
+		return "", ValidationError{"api_key": "paste the API token from your Purelymail account (one line, no spaces)"}
+	}
+	return k, nil
+}
+
+// SavePurelymailKey seals and stores the API key ("" removes it). Like the
+// ownership proof, it isn't Caddy config, so it's audited as mail_settings.
+func (s *Store) SavePurelymailKey(ctx context.Context, key string, box *secrets.Box, by string) error {
+	sealed := ""
+	if key != "" {
+		if !box.Ready() {
+			return ConflictError(secrets.ErrNoKey.Error())
+		}
+		var err error
+		if sealed, err = box.Seal(key, purelymailKeyPurpose); err != nil {
+			return err
+		}
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO settings (key, value) VALUES (?, ?)
+		ON CONFLICT (key) DO UPDATE SET value = excluded.value`, settingPurelymailKey, sealed); err != nil {
+		return err
+	}
+	// The audit entry records that the key changed, never the key.
+	if err := audit(ctx, tx, by, "update", "mail_settings", 0, nil, map[string]bool{"api_key_set": key != ""}); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

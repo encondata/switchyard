@@ -14,8 +14,22 @@ import (
 // Mail domains: Purelymail's DNS records, kept in Cloudflare.
 
 type (
+	// mailSettingsBody changes the Purelymail settings. A new api_key is
+	// checked with Purelymail, and the ownership proof is fetched with it.
 	mailSettingsBody struct {
+		Ownership *string `json:"ownership,omitempty"` // nil keeps it
+		APIKey    string  `json:"api_key,omitempty"`   // "" keeps the stored key
+		ClearKey  bool    `json:"clear_key,omitempty"`
+	}
+	mailSettings struct {
 		Ownership string `json:"ownership"`
+		KeySet    bool   `json:"key_set"`
+	}
+	// pmStatus is Purelymail's own view of a domain (with an API key).
+	pmStatus struct {
+		Added bool                   `json:"added"`
+		DNS   *purelymail.DNSSummary `json:"dns,omitempty"`
+		Error string                 `json:"error,omitempty"`
 	}
 	mailDomainBody struct {
 		Domain        string `json:"domain"`
@@ -32,15 +46,26 @@ type (
 		Domain  store.MailDomain    `json:"domain"`
 		Records []purelymail.Item   `json:"records"`
 		Changes []purelymail.Change `json:"changes,omitempty"`
+		// Purelymail is set when an API key is stored.
+		Purelymail *pmStatus `json:"purelymail,omitempty"`
 	}
 )
 
+func (s *srv) mailSettings(ctx context.Context) (mailSettings, error) {
+	v, err := s.store.PurelymailOwnership(ctx)
+	if err != nil {
+		return mailSettings{}, err
+	}
+	set, err := s.store.PurelymailKeySet(ctx)
+	return mailSettings{Ownership: v, KeySet: set}, err
+}
+
 func (s *srv) handleGetMailSettings(w http.ResponseWriter, r *http.Request) {
-	v, err := s.store.PurelymailOwnership(r.Context())
+	ms, err := s.mailSettings(r.Context())
 	if s.storeError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, mailSettingsBody{Ownership: v})
+	writeJSON(w, http.StatusOK, ms)
 }
 
 func (s *srv) handlePutMailSettings(w http.ResponseWriter, r *http.Request) {
@@ -48,11 +73,51 @@ func (s *srv) handlePutMailSettings(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	v, err := s.store.SavePurelymailOwnership(r.Context(), req.Ownership, userFrom(r).Username)
+	user := userFrom(r).Username
+	ctx := r.Context()
+	switch {
+	case req.APIKey != "":
+		key, err := store.CleanPurelymailKey(req.APIKey)
+		if s.storeError(w, err) {
+			return
+		}
+		if !s.box.Ready() {
+			s.storeError(w, store.ConflictError("CPM_SECRET_KEY isn't set, so the API key can't be stored"))
+			return
+		}
+		// A key that works can fetch the ownership code: that checks it
+		// and saves pasting the code.
+		cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		code, err := purelymail.Client{Token: key}.OwnershipCode(cctx)
+		cancel()
+		if err != nil {
+			msg := err.Error()
+			var pe *purelymail.APIError
+			if errors.As(err, &pe) && pe.BadKey() {
+				msg = "Purelymail didn't accept this API key"
+			}
+			s.storeError(w, store.ValidationError{"api_key": msg})
+			return
+		}
+		if s.storeError(w, s.store.SavePurelymailKey(ctx, key, s.box, user)) {
+			return
+		}
+		req.Ownership = &code
+	case req.ClearKey:
+		if s.storeError(w, s.store.SavePurelymailKey(ctx, "", s.box, user)) {
+			return
+		}
+	}
+	if req.Ownership != nil {
+		if _, err := s.store.SavePurelymailOwnership(ctx, *req.Ownership, user); s.storeError(w, err) {
+			return
+		}
+	}
+	ms, err := s.mailSettings(ctx)
 	if s.storeError(w, err) {
 		return
 	}
-	writeJSON(w, http.StatusOK, mailSettingsBody{Ownership: v})
+	writeJSON(w, http.StatusOK, ms)
 }
 
 func (s *srv) handleListMailDomains(w http.ResponseWriter, r *http.Request) {
@@ -214,7 +279,69 @@ func (s *srv) checkMail(ctx context.Context, m store.MailDomain, tok string) (ma
 	if m, err = s.store.GetMailDomain(ctx, m.ID); err != nil {
 		return mailCheck{}, err
 	}
-	return mailCheck{Domain: m, Records: items}, nil
+	check := mailCheck{Domain: m, Records: items}
+	if pm, ok := s.purelymailClient(ctx); ok {
+		check.Purelymail = &pmStatus{}
+		if d, err := pm.FindDomain(ctx, m.Domain); err != nil {
+			check.Purelymail.Error = err.Error()
+		} else if d != nil {
+			check.Purelymail.Added, check.Purelymail.DNS = true, &d.DNSSummary
+		}
+	}
+	return check, nil
+}
+
+// purelymailClient is a client with the stored API key, if there is one.
+func (s *srv) purelymailClient(ctx context.Context) (purelymail.Client, bool) {
+	key, err := s.store.PurelymailKey(ctx, s.box)
+	if err != nil {
+		s.log.Warn("reading the Purelymail API key", "err", err)
+		return purelymail.Client{}, false
+	}
+	return purelymail.Client{Token: key}, key != ""
+}
+
+// handlePurelymailDomain adds the domain to the Purelymail account, or, if
+// it's there already, asks Purelymail to check its DNS again.
+func (s *srv) handlePurelymailDomain(w http.ResponseWriter, r *http.Request) {
+	m, tok, ok := s.mailDomain(w, r)
+	if !ok {
+		return
+	}
+	pm, ok := s.purelymailClient(r.Context())
+	if !ok {
+		writeError(w, http.StatusConflict, "conflict", "Save a Purelymail API key first.")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	d, err := pm.FindDomain(ctx, m.Domain)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "purelymail", err.Error())
+		return
+	}
+	action := "purelymail_add"
+	if d == nil {
+		err = pm.AddDomain(ctx, m.Domain)
+	} else {
+		action = "purelymail_recheck"
+		err = pm.RecheckDNS(ctx, m.Domain)
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "purelymail", err.Error())
+		return
+	}
+	user := userFrom(r).Username
+	if err := s.store.AuditMail(r.Context(), m.ID, user, action, map[string]string{"domain": m.Domain}); err != nil {
+		s.log.Error("auditing mail domain", "err", err)
+	}
+	s.log.Info("purelymail domain", "domain", m.Domain, "action", action, "by", user)
+	check, err := s.checkMail(ctx, m, tok)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "cloudflare", err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, check)
 }
 
 // zoneDNS changes records in one Cloudflare zone.

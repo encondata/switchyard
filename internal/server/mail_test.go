@@ -8,12 +8,14 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/encondata/switchyard/internal/cloudflare"
+	"github.com/encondata/switchyard/internal/purelymail"
 	"github.com/encondata/switchyard/internal/secrets"
 	"github.com/encondata/switchyard/internal/store"
 )
@@ -65,14 +67,12 @@ func (f *fakeZone) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func TestMailDomainsAPI(t *testing.T) {
+// newMailServer is a signed-in admin, a Cloudflare provider and a fake
+// example.com zone holding recs.
+func newMailServer(t *testing.T, recs []cloudflare.Record) (*client, *store.Store, string, *fakeZone) {
+	t.Helper()
 	ctx := context.Background()
-	prio := 1
-	zone := &fakeZone{recs: []cloudflare.Record{
-		{ID: "g1", Type: "MX", Name: "example.com", Content: "aspmx.l.google.com", Priority: &prio},
-		{ID: "g2", Type: "TXT", Name: "example.com", Content: `"v=spf1 include:_spf.google.com ~all"`},
-		{ID: "w1", Type: "A", Name: "www.example.com", Content: "192.0.2.1"},
-	}}
+	zone := &fakeZone{recs: recs}
 	cf := httptest.NewServer(zone)
 	t.Cleanup(cf.Close)
 	old := cloudflare.BaseURL
@@ -100,11 +100,21 @@ func TestMailDomainsAPI(t *testing.T) {
 	if code, _ := c.do("POST", "/api/auth/password", `{"current_password":"123456","new_password":"a-good-passw0rd"}`); code != 200 {
 		t.Fatalf("password change = %d", code)
 	}
+	return c, st, strconv.FormatInt(p.ID, 10), zone
+}
+
+func TestMailDomainsAPI(t *testing.T) {
+	ctx := context.Background()
+	prio := 1
+	c, st, pid, zone := newMailServer(t, []cloudflare.Record{
+		{ID: "g1", Type: "MX", Name: "example.com", Content: "aspmx.l.google.com", Priority: &prio},
+		{ID: "g2", Type: "TXT", Name: "example.com", Content: `"v=spf1 include:_spf.google.com ~all"`},
+		{ID: "w1", Type: "A", Name: "www.example.com", Content: "192.0.2.1"},
+	})
 
 	if code, body := c.do("PUT", "/api/mail/settings", `{"ownership":"purelymail_ownership_proof=abc"}`); code != 200 || body["ownership"] != "purelymail_ownership_proof=abc" {
 		t.Fatalf("settings = %d %v", code, body)
 	}
-	pid := strconv.FormatInt(p.ID, 10)
 	if code, body := c.do("POST", "/api/mail/domains", `{"domain":"other.test","dns_provider_id":`+pid+`}`); code != 400 {
 		t.Fatalf("unknown zone = %d %v", code, body)
 	}
@@ -172,5 +182,97 @@ func TestMailDomainsAPI(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("audit lacks the deleted MX: %+v", entries)
+	}
+}
+
+// fakePurelymail is a Purelymail account (key "pm-key") in memory.
+type fakePurelymail struct {
+	mu      sync.Mutex
+	domains map[string]bool
+	calls   []string
+}
+
+func (f *fakePurelymail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r.Header.Get("Purelymail-Api-Token") != "pm-key-0123456789" {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"type":"error","code":"invalidToken","message":"Invalid API token"}`))
+		return
+	}
+	var body map[string]any
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	f.calls = append(f.calls, r.URL.Path)
+	switch r.URL.Path {
+	case "/getOwnershipCode":
+		_, _ = w.Write([]byte(`{"type":"success","result":{"code":"purelymail_ownership_proof=fromapi"}}`))
+	case "/listDomains":
+		var ds []string
+		for d := range f.domains {
+			ds = append(ds, `{"name":"`+d+`","isShared":false,"dnsSummary":{"passesMx":true,"passesSpf":true,"passesDkim":true,"passesDmarc":false}}`)
+		}
+		_, _ = w.Write([]byte(`{"type":"success","result":{"domains":[` + strings.Join(ds, ",") + `]}}`))
+	case "/addDomain":
+		f.domains[body["domainName"].(string)] = true
+		_, _ = w.Write([]byte(`{"type":"success","result":{}}`))
+	case "/updateDomainSettings":
+		_, _ = w.Write([]byte(`{"type":"success","result":{}}`))
+	}
+}
+
+func TestMailPurelymailAPI(t *testing.T) {
+	c, _, pid, _ := newMailServer(t, nil)
+	pm := &fakePurelymail{domains: map[string]bool{}}
+	pms := httptest.NewServer(pm)
+	t.Cleanup(pms.Close)
+	old := purelymail.APIBaseURL
+	purelymail.APIBaseURL = pms.URL
+	t.Cleanup(func() { purelymail.APIBaseURL = old })
+
+	// Without a key: no Purelymail section, and the action needs one.
+	code, body := c.do("POST", "/api/mail/domains", `{"domain":"example.com","dns_provider_id":`+pid+`}`)
+	if code != 201 || body["purelymail"] != nil {
+		t.Fatalf("create = %d %v", code, body)
+	}
+	id := strconv.Itoa(int(body["domain"].(map[string]any)["id"].(float64)))
+	if code, _ := c.do("POST", "/api/mail/domains/"+id+"/purelymail", ""); code != 409 {
+		t.Fatalf("purelymail without key = %d", code)
+	}
+
+	// A wrong key is refused and not stored.
+	if code, body := c.do("PUT", "/api/mail/settings", `{"api_key":"wrong-key-0123456789"}`); code != 400 || !strings.Contains(body["fields"].(map[string]any)["api_key"].(string), "didn't accept") {
+		t.Fatalf("wrong key = %d %v", code, body)
+	}
+	// A good key is stored (never shown) and fetches the ownership proof.
+	code, body = c.do("PUT", "/api/mail/settings", `{"api_key":" pm-key-0123456789 "}`)
+	if code != 200 || body["key_set"] != true || body["ownership"] != "purelymail_ownership_proof=fromapi" || body["api_key"] != nil {
+		t.Fatalf("good key = %d %v", code, body)
+	}
+	if _, body = c.do("GET", "/api/mail/settings", ""); body["key_set"] != true || len(body) != 2 {
+		t.Fatalf("settings = %v", body)
+	}
+
+	// Checks now say whether Purelymail has the domain; the action adds it,
+	// then asks for a recheck once it's there.
+	_, body = c.do("GET", "/api/mail/domains/"+id+"/records", "")
+	if s := body["purelymail"].(map[string]any); s["added"] != false {
+		t.Fatalf("before add = %v", s)
+	}
+	code, body = c.do("POST", "/api/mail/domains/"+id+"/purelymail", "")
+	s := body["purelymail"].(map[string]any)
+	if code != 200 || s["added"] != true || s["dns"].(map[string]any)["passesDmarc"] != false {
+		t.Fatalf("add = %d %v", code, body)
+	}
+	if code, _ = c.do("POST", "/api/mail/domains/"+id+"/purelymail", ""); code != 200 {
+		t.Fatalf("recheck = %d", code)
+	}
+	if !slices.Contains(pm.calls, "/addDomain") || !slices.Contains(pm.calls, "/updateDomainSettings") {
+		t.Errorf("calls = %v", pm.calls)
+	}
+
+	// Removing the key: back to no Purelymail section; the proof stays.
+	code, body = c.do("PUT", "/api/mail/settings", `{"clear_key":true}`)
+	if code != 200 || body["key_set"] != false || body["ownership"] != "purelymail_ownership_proof=fromapi" {
+		t.Fatalf("clear key = %d %v", code, body)
 	}
 }

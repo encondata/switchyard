@@ -9,6 +9,7 @@ import {
   type MailCheck,
   type MailDomain,
   type MailRecord,
+  type MailSettings,
 } from './api'
 
 const domainStatus: Record<MailDomain['status'], [string, string]> = {
@@ -67,7 +68,7 @@ export function MailPage({
 }) {
   const [domains, setDomains] = useState<MailDomain[] | null>(null)
   const [providers, setProviders] = useState<DNSProvider[]>([])
-  const [ownership, setOwnership] = useState<string | null>(null)
+  const [settings, setSettings] = useState<MailSettings | null>(null)
   const [check, setCheck] = useState<MailCheck | null>(null)
   const [checking, setChecking] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -86,8 +87,8 @@ export function MailPage({
       .catch(() => undefined)
     api
       .mailSettings()
-      .then((s) => setOwnership(s.ownership))
-      .catch(() => setOwnership(''))
+      .then(setSettings)
+      .catch(() => setSettings({ ownership: '', key_set: false }))
   }, [])
 
   async function open(d: MailDomain) {
@@ -125,11 +126,11 @@ export function MailPage({
 
   return (
     <div className="stack">
-      <OwnershipCard
-        value={ownership}
+      <PurelymailCard
+        settings={settings}
         isAdmin={isAdmin}
         onSaved={(v) => {
-          setOwnership(v)
+          setSettings(v)
           if (check) void open(check.domain)
         }}
       />
@@ -244,91 +245,148 @@ export function MailPage({
   )
 }
 
-function OwnershipCard({
-  value,
+function PurelymailCard({
+  settings,
   isAdmin,
   onSaved,
 }: {
-  value: string | null
+  settings: MailSettings | null
   isAdmin: boolean
-  onSaved: (v: string) => void
+  onSaved: (v: MailSettings) => void
 }) {
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState<'key' | 'ownership' | null>(null)
   const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  async function save(e: FormEvent) {
-    e.preventDefault()
+  async function save(body: Parameters<typeof api.saveMailSettings>[0]) {
     setError(null)
+    setBusy(true)
     try {
-      const r = await api.saveMailSettings(draft)
-      setEditing(false)
-      onSaved(r.ownership)
+      onSaved(await api.saveMailSettings(body))
+      setEditing(null)
+      setDraft('')
     } catch (err) {
       setError(
-        err instanceof ApiError && err.fields.ownership
-          ? err.fields.ownership
+        err instanceof ApiError && (err.fields.api_key || err.fields.ownership)
+          ? (err.fields.api_key ?? err.fields.ownership)
           : message(err),
       )
+    } finally {
+      setBusy(false)
     }
   }
 
-  if (value === null) return null
+  function submit(e: FormEvent) {
+    e.preventDefault()
+    void save(editing === 'key' ? { api_key: draft } : { ownership: draft })
+  }
+
+  function edit(what: 'key' | 'ownership') {
+    setError(null)
+    setDraft(what === 'ownership' ? (settings?.ownership ?? '') : '')
+    setEditing(what)
+  }
+
+  if (settings === null) return null
+  const { ownership, key_set: keySet } = settings
   return (
     <section className="card">
       <h2>Purelymail account</h2>
       <p className="hint">
-        Purelymail proves a domain is yours with a TXT record that is the same
-        for every domain on your account. In Purelymail, open{' '}
-        <strong>Domains → Add new domain</strong> and copy the ownership TXT
-        value (it starts with{' '}
-        <span className="mono">purelymail_ownership_proof=</span>).
+        With an API key, Switchyard fetches your ownership proof, adds domains
+        to Purelymail once their records are in, and shows what Purelymail sees.
+        Create the key in Purelymail’s account settings (API access). Without
+        one, paste the ownership proof by hand: Purelymail shows it on its{' '}
+        <strong>Add new domain</strong> page.
       </p>
-      {!editing && (
+      <div className="pm-settings">
+        <span className="pm-label">API key</span>
         <div className="actions">
-          {value ? (
-            <span className="mono">{value}</span>
+          {keySet ? (
+            <span className="badge cert-valid">Saved</span>
+          ) : (
+            <span className="badge cert-not_needed">Not set</span>
+          )}
+          {isAdmin && editing !== 'key' && (
+            <>
+              <button className="secondary small" onClick={() => edit('key')}>
+                {keySet ? 'Replace' : 'Add API key'}
+              </button>
+              {keySet && (
+                <button
+                  className="link danger"
+                  disabled={busy}
+                  onClick={() => {
+                    if (
+                      confirm(
+                        'Remove the Purelymail API key? The ownership proof stays.',
+                      )
+                    )
+                      void save({ clear_key: true })
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </>
+          )}
+        </div>
+        <span className="pm-label">Ownership proof</span>
+        <div className="actions">
+          {ownership ? (
+            <span className="mono pm-proof">{ownership}</span>
           ) : (
             <span className="badge cert-pending">Not set</span>
           )}
-          {isAdmin && (
+          {keySet && ownership && <span className="hint">from Purelymail</span>}
+          {isAdmin && !keySet && editing !== 'ownership' && (
             <button
               className="secondary small"
-              onClick={() => {
-                setDraft(value)
-                setEditing(true)
-              }}
+              onClick={() => edit('ownership')}
             >
-              {value ? 'Change' : 'Set ownership proof'}
+              {ownership ? 'Change' : 'Set by hand'}
             </button>
           )}
-          {!isAdmin && !value && (
+          {!isAdmin && !ownership && (
             <span className="hint">An administrator needs to set it.</span>
           )}
         </div>
-      )}
+      </div>
       {editing && (
-        <form className="actions wildcard-form" onSubmit={save}>
+        <form className="actions wildcard-form" onSubmit={submit}>
           <label className="grow">
-            Ownership TXT value
+            {editing === 'key' ? 'Purelymail API key' : 'Ownership TXT value'}
             <input
               className="mono"
+              type={editing === 'key' ? 'password' : 'text'}
               autoFocus
+              required={editing === 'key'}
               autoComplete="off"
-              placeholder="purelymail_ownership_proof=…"
+              placeholder={
+                editing === 'key' ? '' : 'purelymail_ownership_proof=…'
+              }
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
             />
           </label>
-          <button>Save</button>
+          <button disabled={busy}>
+            {busy && editing === 'key' ? 'Checking with Purelymail…' : 'Save'}
+          </button>
           <button
             type="button"
             className="secondary"
-            onClick={() => setEditing(false)}
+            onClick={() => setEditing(null)}
           >
             Cancel
           </button>
         </form>
+      )}
+      {editing === 'key' && (
+        <p className="hint">
+          Switchyard checks the key with Purelymail before saving it, and keeps
+          it encrypted. It’s never shown again.
+        </p>
       )}
       {error && (
         <p className="error" role="alert">
@@ -598,17 +656,126 @@ function RecordsCard({
           )}
         </div>
       )}
-      {done ? (
+      {check.purelymail ? (
+        <PurelymailStatus
+          check={check}
+          canEdit={canEdit}
+          recordsDone={done}
+          onChecked={onChecked}
+        />
+      ) : done ? (
         <p className="success">
           Every record Purelymail needs is in place. Finish adding the domain in
           Purelymail; it verifies the records within a few minutes to a few
           hours.
         </p>
-      ) : (
+      ) : null}
+      {!done && (
         <p className="hint">
           Records are added as DNS only (not proxied) with automatic TTL.
         </p>
       )}
     </section>
+  )
+}
+
+const pmChecks = [
+  ['passesMx', 'MX'],
+  ['passesSpf', 'SPF'],
+  ['passesDkim', 'DKIM'],
+  ['passesDmarc', 'DMARC'],
+] as const
+
+/** What Purelymail itself sees for the domain (with an API key). */
+function PurelymailStatus({
+  check,
+  canEdit,
+  recordsDone,
+  onChecked,
+}: {
+  check: MailCheck
+  canEdit: boolean
+  recordsDone: boolean
+  onChecked: (c: MailCheck) => void
+}) {
+  const pm = check.purelymail!
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [asked, setAsked] = useState(false)
+
+  async function go() {
+    setError(null)
+    setBusy(true)
+    try {
+      const wasAdded = pm.added
+      onChecked(await api.purelymailDomain(check.domain.id))
+      // Only a re-check is "asked"; adding shows Purelymail's first verdict.
+      setAsked(wasAdded)
+    } catch (err) {
+      setError(message(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const allPass = !!pm.dns && pmChecks.every(([k]) => pm.dns![k])
+  return (
+    <div className="pm-status">
+      <h3>At Purelymail</h3>
+      {pm.error && (
+        <p className="error" role="alert">
+          Couldn’t ask Purelymail: {pm.error}
+        </p>
+      )}
+      {!pm.error && !pm.added && (
+        <p className="hint">
+          {recordsDone
+            ? 'The records are in. Add the domain to your Purelymail account; Purelymail checks them first.'
+            : 'Not on your Purelymail account yet. Once every record above is OK, add it from here.'}
+        </p>
+      )}
+      {pm.added && pm.dns && (
+        <div className="actions">
+          {pmChecks.map(([k, label]) => (
+            <span
+              key={k}
+              className={`badge ${pm.dns![k] ? 'cert-valid' : 'cert-pending'}`}
+            >
+              {label} {pm.dns![k] ? '✓' : '…'}
+            </span>
+          ))}
+        </div>
+      )}
+      {pm.added &&
+        (allPass ? (
+          <p className="success">
+            Purelymail has the domain and accepts every record. Mail is ready.
+          </p>
+        ) : (
+          <p className="hint">
+            Purelymail has the domain but hasn’t accepted every record yet. It
+            checks on its own schedule; you can ask it to look again now.
+            {asked && ' Asked; check again in a minute.'}
+          </p>
+        ))}
+      {canEdit && !pm.error && (!pm.added ? recordsDone : !allPass) && (
+        <div className="actions">
+          <button disabled={busy} onClick={() => void go()}>
+            {busy
+              ? 'Asking Purelymail…'
+              : pm.added
+                ? 'Ask Purelymail to re-check'
+                : 'Add to Purelymail'}
+          </button>
+        </div>
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+          {!pm.added &&
+            '. Cloudflare changes can take a few minutes to reach Purelymail; try again shortly.'}
+        </p>
+      )}
+    </div>
   )
 }
