@@ -2,6 +2,7 @@ package cloudflare
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +73,7 @@ func TestRecords(t *testing.T) {
 	if err != nil || z.ID != "z1" {
 		t.Fatalf("FindZone = %+v, %v", z, err)
 	}
-	if _, err := FindZone(ctx, "t", "other.test"); err != ErrNoZone {
+	if _, err := FindZone(ctx, "t", "other.test"); !errors.Is(err, ErrNoZone) {
 		t.Fatalf("FindZone(other) err = %v", err)
 	}
 	rs, err := ListRecords(ctx, "t", "z1")
