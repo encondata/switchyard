@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -30,8 +31,65 @@ func TestVerify(t *testing.T) {
 	if err != nil || !r.Active || len(r.Zones) != 2 || r.Zones[0] != "a.example" {
 		t.Fatalf("Verify(good) = %+v, %v", r, err)
 	}
-	if _, err := Verify(context.Background(), "bad"); err == nil || err.Error() != "cloudflare: Invalid API Token" {
+	if r.Owner != "user" {
+		t.Errorf("owner = %q", r.Owner)
+	}
+	_, err = Verify(context.Background(), "bad")
+	if err == nil || !strings.HasPrefix(err.Error(), "cloudflare: Invalid API Token. Cloudflare doesn't accept this token") {
 		t.Fatalf("Verify(bad) err = %v", err)
+	}
+}
+
+// Account-owned tokens are "invalid" at /user/tokens/verify and verify at
+// their account instead.
+func TestVerifyAccountToken(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer acct" {
+			w.WriteHeader(401)
+			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}]}`))
+			return
+		}
+		switch r.URL.Path {
+		case "/user/tokens/verify":
+			w.WriteHeader(401)
+			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}]}`))
+		case "/zones":
+			_, _ = w.Write([]byte(`{"success":true,"result":[{"id":"z1","name":"example.com","account":{"id":"a1"}}]}`))
+		case "/accounts/a1/tokens/verify":
+			_, _ = w.Write([]byte(`{"success":true,"result":{"status":"active"}}`))
+		default:
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"success":false,"errors":[{"message":"no route"}]}`))
+		}
+	}))
+	defer srv.Close()
+	BaseURL = srv.URL
+
+	r, err := Verify(context.Background(), "acct")
+	if err != nil || !r.Active || r.Owner != "account" || len(r.Zones) != 1 {
+		t.Fatalf("Verify(acct) = %+v, %v", r, err)
+	}
+	_, err = Verify(context.Background(), "nope")
+	var ae *APIError
+	if !errors.As(err, &ae) || ae.Code != 1000 || !ae.BadToken() || !strings.Contains(err.Error(), "(code 1000)") {
+		t.Fatalf("Verify(nope) err = %v", err)
+	}
+}
+
+func TestAPIErrorText(t *testing.T) {
+	for _, c := range []struct {
+		e    APIError
+		want string
+	}{
+		{APIError{Status: 400, Code: 6003, Message: "Invalid request headers: Invalid format for Authorization header"},
+			"cloudflare: Invalid request headers: Invalid format for Authorization header (code 6003). Cloudflare couldn't read the token. Paste only the API token itself (not the Global API Key)"},
+		{APIError{Status: 403, Code: 10000, Message: "Authentication error"},
+			"cloudflare: Authentication error (code 10000). The token works but isn't allowed to do this: give it Zone → Zone → Read and Zone → DNS → Edit on this zone"},
+		{APIError{Status: 502}, "cloudflare: HTTP 502"},
+	} {
+		if got := c.e.Error(); got != c.want {
+			t.Errorf("got  %q\nwant %q", got, c.want)
+		}
 	}
 }
 

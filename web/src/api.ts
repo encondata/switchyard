@@ -191,6 +191,8 @@ export type MailCheck = {
 export type TokenCheck = {
   active: boolean
   status: string
+  /** user: made under My Profile; account: an account-owned token. */
+  owner: 'user' | 'account'
   zones: string[]
   zones_error?: string
 }

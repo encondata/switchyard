@@ -35,7 +35,11 @@ func TestDNSProviders(t *testing.T) {
 		t.Fatalf("bad token err = %v", err)
 	}
 
-	p, err := s.SaveDNSProvider(ctx, DNSProvider{Name: "Cloudflare main"}, cfToken, box, "admin")
+	if _, err := s.SaveDNSProvider(ctx, DNSProvider{Name: "cf"}, "0123456789abcdef0123456789abcdef01234", box, "admin"); !errors.As(err, &verr) || !strings.Contains(verr["api_token"], "Global API Key") {
+		t.Fatalf("global key err = %v", err)
+	}
+
+	p, err := s.SaveDNSProvider(ctx, DNSProvider{Name: "Cloudflare main"}, "Bearer "+cfToken+"\n", box, "admin")
 	if err != nil || !p.TokenSet || p.Type != "cloudflare" {
 		t.Fatalf("save = %+v, %v", p, err)
 	}

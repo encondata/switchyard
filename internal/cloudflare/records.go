@@ -14,8 +14,11 @@ import (
 
 // Zone is a Cloudflare zone (a domain whose DNS Cloudflare serves).
 type Zone struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Account struct {
+		ID string `json:"id"`
+	} `json:"account"`
 }
 
 // Record is one DNS record in a zone. Name is the full name
