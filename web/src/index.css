@@ -2490,3 +2490,38 @@ details summary {
   flex-direction: column;
   gap: 0.3rem;
 }
+
+.pm-settings {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.6rem 1rem;
+  align-items: center;
+}
+
+.pm-label {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.pm-proof {
+  overflow-wrap: anywhere;
+}
+
+.pm-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.pm-status h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+@media (max-width: 560px) {
+  .pm-settings {
+    grid-template-columns: 1fr;
+  }
+}

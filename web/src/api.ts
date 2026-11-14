@@ -186,7 +186,20 @@ export type MailCheck = {
   domain: MailDomain
   records: MailRecord[]
   changes?: MailChange[]
+  /** Purelymail's own view; only with an API key. */
+  purelymail?: {
+    added: boolean
+    dns?: {
+      passesMx: boolean
+      passesSpf: boolean
+      passesDkim: boolean
+      passesDmarc: boolean
+    }
+    error?: string
+  }
 }
+
+export type MailSettings = { ownership: string; key_set: boolean }
 
 export type TokenCheck = {
   active: boolean
@@ -913,10 +926,16 @@ export const api = {
   verifyDNSProvider: (id: number) =>
     request<TokenCheck>('POST', `/api/dns-providers/${id}/verify`),
 
-  mailSettings: () =>
-    request<{ ownership: string }>('GET', '/api/mail/settings'),
-  saveMailSettings: (ownership: string) =>
-    request<{ ownership: string }>('PUT', '/api/mail/settings', { ownership }),
+  mailSettings: () => request<MailSettings>('GET', '/api/mail/settings'),
+  /** ownership undefined keeps it; api_key checks the key with Purelymail
+   * and fetches the ownership proof with it. */
+  saveMailSettings: (body: {
+    ownership?: string
+    api_key?: string
+    clear_key?: boolean
+  }) => request<MailSettings>('PUT', '/api/mail/settings', body),
+  purelymailDomain: (id: number) =>
+    request<MailCheck>('POST', `/api/mail/domains/${id}/purelymail`),
   mailDomains: () => request<MailDomain[]>('GET', '/api/mail/domains'),
   addMailDomain: (domain: string, dns_provider_id: number) =>
     request<MailCheck>('POST', '/api/mail/domains', {
