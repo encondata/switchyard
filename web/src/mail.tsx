@@ -11,6 +11,7 @@ import {
   type MailRecord,
   type MailSettings,
 } from './api'
+import { AccountsCard } from './mailaccounts'
 
 const domainStatus: Record<MailDomain['status'], [string, string]> = {
   '': ['Not checked', 'cert-not_needed'],
@@ -71,6 +72,7 @@ export function MailPage({
   const [settings, setSettings] = useState<MailSettings | null>(null)
   const [check, setCheck] = useState<MailCheck | null>(null)
   const [checking, setChecking] = useState<number | null>(null)
+  const [accountsFor, setAccountsFor] = useState<MailDomain | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   function load() {
@@ -115,6 +117,7 @@ export function MailPage({
     try {
       await api.deleteMailDomain(d.id)
       if (check?.domain.id === d.id) setCheck(null)
+      if (accountsFor?.id === d.id) setAccountsFor(null)
       load()
     } catch (err) {
       setError(message(err))
@@ -156,6 +159,7 @@ export function MailPage({
                   <th>Domain</th>
                   <th>DNS provider</th>
                   <th>Records</th>
+                  <th>Accounts</th>
                   <th>Checked</th>
                   <th />
                 </tr>
@@ -167,7 +171,9 @@ export function MailPage({
                     <tr
                       key={d.id}
                       className={
-                        check?.domain.id === d.id ? 'selected-row' : undefined
+                        check?.domain.id === d.id || accountsFor?.id === d.id
+                          ? 'selected-row'
+                          : undefined
                       }
                     >
                       <td>
@@ -185,6 +191,7 @@ export function MailPage({
                           <div className="hint">{d.status_detail}</div>
                         )}
                       </td>
+                      <td>{d.accounts || '—'}</td>
                       <td className="hint">
                         {d.checked_at
                           ? new Date(d.checked_at).toLocaleString()
@@ -198,6 +205,12 @@ export function MailPage({
                             onClick={() => void open(d)}
                           >
                             {checking === d.id ? 'Checking…' : 'Check records'}
+                          </button>
+                          <button
+                            className="link"
+                            onClick={() => setAccountsFor(d)}
+                          >
+                            Email accounts
                           </button>
                           {canEdit && (
                             <button
@@ -239,6 +252,14 @@ export function MailPage({
             load()
           }}
           onRecheck={() => void open(check.domain)}
+        />
+      )}
+      {accountsFor && (
+        <AccountsCard
+          key={accountsFor.id}
+          domain={accountsFor}
+          canEdit={canEdit}
+          onChanged={load}
         />
       )}
     </div>

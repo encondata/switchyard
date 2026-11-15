@@ -46,7 +46,12 @@ Work tracking: Harbor Master project `CPM`.
   replaces records in the way (an old MX or SPF) only when you tick them.
   Deleted records are kept in the audit log. With a Purelymail API key it
   also fetches the ownership proof, adds the domain to Purelymail and shows
-  Purelymail's own verdict on each record.
+  Purelymail's own verdict on each record. **Email accounts:** each domain
+  has a shared password; one click creates noreply, info, system and alerts
+  at Purelymail with it, and other addresses can be added with the shared
+  password or their own. Passwords are stored encrypted and editors can show
+  or copy them again (each showing is audited). Changing the shared password
+  changes it at Purelymail for every account that uses it.
 - **Admin:** users with admin / editor / viewer roles, TOTP two-factor
   sign-in (can be required), sign-in rate limits, audit log, alerts, health
   page, backup and restore, NPM importer.
