@@ -106,7 +106,8 @@ export function WildcardCard({
         its certificate. One wildcard certificate (for{' '}
         <span className="mono">*.example.com</span>) covers every host one level
         under the domain, so new hosts never appear in the logs. Needs the
-        domain’s DNS on a DNS provider (see <a href="#/dns">DNS</a>).
+        domain’s DNS on a DNS provider (a Cloudflare token under{' '}
+        <a href="#/connections">External connections</a>).
       </p>
       {error && <p className="error">{error}</p>}
       {info && <p className="success">{info}</p>}
@@ -233,7 +234,8 @@ export function WildcardCard({
           </button>
           {providers.length === 0 && (
             <span className="hint">
-              Add a DNS provider first, on the <a href="#/dns">DNS</a> page.
+              Add a Cloudflare token first, under{' '}
+              <a href="#/connections">External connections</a>.
             </span>
           )}
         </form>

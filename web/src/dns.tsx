@@ -91,13 +91,8 @@ function ProviderForm({
   )
 }
 
-export function DNSPage({
-  isAdmin,
-  onChanged,
-}: {
-  isAdmin: boolean
-  onChanged: () => void
-}) {
+/** Cloudflare accounts (API tokens), on the External connections page. */
+export function CloudflareCard({ onChanged }: { onChanged: () => void }) {
   const [providers, setProviders] = useState<DNSProvider[] | null>(null)
   const [ready, setReady] = useState(true)
   const [editing, setEditing] = useState<DNSProvider | 'new' | null>(null)
@@ -159,16 +154,18 @@ export function DNSPage({
   return (
     <section className="card">
       <div className="toolbar">
-        <h1>DNS providers</h1>
-        {isAdmin && ready && (
-          <button onClick={() => setEditing('new')}>Add Cloudflare</button>
+        <h2>Cloudflare</h2>
+        {ready && (
+          <button className="secondary small" onClick={() => setEditing('new')}>
+            Add Cloudflare token
+          </button>
         )}
       </div>
       <p className="hint">
-        Hosts with the certificate set to <strong>DNS challenge</strong> prove
-        domain ownership by adding a TXT record through your DNS provider. That
-        works for wildcard domains and for names that aren’t reachable from the
-        internet. Set a default provider on a folder, or choose one per host.
+        Used for <strong>DNS challenge</strong> certificates (wildcards, and
+        names that aren’t reachable from the internet: Caddy proves ownership
+        with a TXT record) and for <a href="#/mail">Mail domains</a>. Each token
+        is a DNS provider you can pick on a host or set as a folder’s default.
       </p>
       {!ready && (
         <p className="error">
@@ -182,7 +179,9 @@ export function DNSPage({
           {error}
         </p>
       )}
-      {providers?.length === 0 && ready && <p>No DNS providers yet.</p>}
+      {providers?.length === 0 && ready && (
+        <p className="hint">No Cloudflare tokens yet.</p>
+      )}
       {providers && providers.length > 0 && (
         <div className="table-wrap">
           <table>
@@ -236,22 +235,15 @@ export function DNSPage({
                         <button className="link" onClick={() => check(p.id)}>
                           Test token
                         </button>
-                        {isAdmin && (
-                          <>
-                            <button
-                              className="link"
-                              onClick={() => setEditing(p)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="link danger"
-                              onClick={() => remove(p)}
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
+                        <button className="link" onClick={() => setEditing(p)}>
+                          Edit
+                        </button>
+                        <button
+                          className="link danger"
+                          onClick={() => remove(p)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </td>
                   </tr>

@@ -55,8 +55,8 @@ Work tracking: Harbor Master project `CPM`.
 - **Admin:** users with admin / editor / viewer roles, TOTP two-factor
   sign-in (can be required), sign-in rate limits, audit log, alerts, health
   page, backup and restore, NPM importer. **External connections** holds
-  the accounts and API keys for other services (Purelymail so far), stored
-  encrypted.
+  the accounts and API keys for other services (Cloudflare tokens and the
+  Purelymail key), stored encrypted.
 
 ## Install
 

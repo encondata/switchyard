@@ -1,18 +1,20 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { api, ApiError, message, type MailSettings } from './api'
+import { CloudflareCard } from './dns'
 import { PageHeader } from './shell'
 
 /**
  * External connections: the sign-ins and API keys Switchyard uses to talk
  * to other services. Admins only.
  */
-export function ConnectionsPage() {
+export function ConnectionsPage({ onChanged }: { onChanged: () => void }) {
   return (
     <div className="page">
       <PageHeader
         title="External connections"
         subtitle="Accounts and API keys Switchyard uses to work with other services. Keys are stored encrypted and never shown again."
       />
+      <CloudflareCard onChanged={onChanged} />
       <PurelymailCard />
     </div>
   )
