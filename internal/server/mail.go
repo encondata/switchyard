@@ -310,7 +310,7 @@ func (s *srv) handlePurelymailDomain(w http.ResponseWriter, r *http.Request) {
 	}
 	pm, ok := s.purelymailClient(r.Context())
 	if !ok {
-		writeError(w, http.StatusConflict, "conflict", "Save a Purelymail API key first.")
+		writeError(w, http.StatusConflict, "conflict", "Add a Purelymail API key under External connections first.")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)

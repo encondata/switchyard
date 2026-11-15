@@ -204,7 +204,18 @@ func (s *srv) routes() []route {
 		with(r(st, "mail.check", "GET", "/api/mail/domains/{id}/records", "Mail", roleViewer, true, false, "Compare a domain's DNS with Purelymail's records", s.handleCheckMailDomain), nil, mailCheck{}),
 		with(r(st, "mail.apply", "POST", "/api/mail/domains/{id}/records", "Mail", roleEditor, true, true, "Add missing Purelymail records; replace the conflicts named in replace", s.handleApplyMailDomain), mailApplyBody{}, mailCheck{}),
 		with(r(st, "mail.purelymail", "POST", "/api/mail/domains/{id}/purelymail", "Mail", roleEditor, true, true, "Add the domain to Purelymail, or ask Purelymail to check its DNS again (needs the API key)", s.handlePurelymailDomain), nil, mailCheck{}),
-		r(st, "mail.delete", "DELETE", "/api/mail/domains/{id}", "Mail", roleEditor, true, true, "Take a domain off the list (its DNS records stay)", s.handleDeleteMailDomain),
+		r(st, "mail.delete", "DELETE", "/api/mail/domains/{id}", "Mail", roleEditor, true, true, "Take a domain off the list (its DNS records stay; refused while it has email accounts)", s.handleDeleteMailDomain),
+
+		// Email accounts (Purelymail users). Passwords are only shown on
+		// request, to editors signed in (not API keys), and each showing is
+		// audited.
+		with(r(st, "mail.accounts.list", "GET", "/api/mail/domains/{id}/accounts", "Mail", roleViewer, true, false, "List a domain's email accounts (no passwords) and the ones at Purelymail not managed here", s.handleListMailAccounts), nil, mailAccountsView{}),
+		with(r(st, "mail.accounts.create", "POST", "/api/mail/domains/{id}/accounts", "Mail", roleEditor, true, true, "Create email accounts at Purelymail with the shared password (or password), each with its own result", s.handleCreateMailAccounts), mailAccountsBody{}, mailAccountsResult{}),
+		with(r(st, "mail.password.set", "PUT", "/api/mail/domains/{id}/password", "Mail", roleEditor, false, true, "Set a domain's shared password, at Purelymail too for the accounts that use it", s.handleSetMailDomainPassword), mailPasswordBody{}, mailPasswordResult{}),
+		with(r(st, "mail.password.reveal", "POST", "/api/mail/domains/{id}/password/reveal", "Mail", roleEditor, false, false, "Show a domain's shared password (audited)", s.handleRevealMailDomainPassword), nil, revealedPassword{}),
+		with(r(st, "mail.account.password", "PUT", "/api/mail/accounts/{id}/password", "Mail", roleEditor, false, true, "Give an account its own password, or put it back on the shared one (use_domain)", s.handleSetMailAccountPassword), mailPasswordBody{}, mailAccountsView{}),
+		with(r(st, "mail.account.reveal", "POST", "/api/mail/accounts/{id}/password/reveal", "Mail", roleEditor, false, false, "Show an account's password (audited)", s.handleRevealMailAccountPassword), nil, revealedPassword{}),
+		r(st, "mail.account.delete", "DELETE", "/api/mail/accounts/{id}", "Mail", roleEditor, true, true, "Delete an account at Purelymail (with its mail) and here", s.handleDeleteMailAccount),
 
 		// Applying config.
 		with(r(ap, "config.preview", "GET", "/api/config/preview", "Config", roleViewer, true, false, "Pending changes: diff against Caddy's running config", s.handlePreview), nil, apply.Preview{}),

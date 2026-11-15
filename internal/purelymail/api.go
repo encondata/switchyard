@@ -161,3 +161,37 @@ func (c Client) AddDomain(ctx context.Context, name string) error {
 func (c Client) RecheckDNS(ctx context.Context, name string) error {
 	return c.call(ctx, "updateDomainSettings", map[string]any{"name": name, "recheckDns": true}, nil)
 }
+
+// ListUsers returns every user (full address) on the account.
+func (c Client) ListUsers(ctx context.Context) ([]string, error) {
+	var r struct {
+		Users []string `json:"users"`
+	}
+	if err := c.call(ctx, "listUser", nil, &r); err != nil {
+		return nil, err
+	}
+	return r.Users, nil
+}
+
+// CreateUser makes a mailbox, local@domain. Switchyard keeps the password,
+// so Purelymail's password reset (which needs a recovery address) and its
+// welcome email are off.
+func (c Client) CreateUser(ctx context.Context, local, domain, password string) error {
+	return c.call(ctx, "createUser", map[string]any{
+		"userName":            local,
+		"domainName":          domain,
+		"password":            password,
+		"enablePasswordReset": false,
+		"sendWelcomeEmail":    false,
+	}, nil)
+}
+
+// SetPassword changes a user's password.
+func (c Client) SetPassword(ctx context.Context, address, password string) error {
+	return c.call(ctx, "modifyUser", map[string]string{"userName": address, "newPassword": password}, nil)
+}
+
+// DeleteUser deletes a user and its mail.
+func (c Client) DeleteUser(ctx context.Context, address string) error {
+	return c.call(ctx, "deleteUser", map[string]string{"userName": address}, nil)
+}

@@ -22,8 +22,12 @@ type MailDomain struct {
 	Status        string     `json:"status"` // ok, incomplete, conflict, error ('' = not checked)
 	StatusDetail  string     `json:"status_detail,omitempty"`
 	CheckedAt     *time.Time `json:"checked_at"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	// PasswordSet says whether the shared account password is set (it's
+	// only shown on request).
+	PasswordSet bool      `json:"password_set"`
+	Accounts    int       `json:"accounts"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 const (
@@ -41,12 +45,15 @@ func NormalizeMailDomain(d string) (string, error) {
 	return d, nil
 }
 
-const mailCols = `id, domain, dns_provider_id, zone_id, zone_name, status, status_detail, checked_at, created_at, updated_at`
+const mailCols = `id, domain, dns_provider_id, zone_id, zone_name, status, status_detail, checked_at,
+	password_sealed != '', (SELECT COUNT(*) FROM mail_accounts a WHERE a.mail_domain_id = mail_domains.id),
+	created_at, updated_at`
 
 func scanMail(sc interface{ Scan(...any) error }) (MailDomain, error) {
 	var m MailDomain
 	var checked sql.NullTime
-	err := sc.Scan(&m.ID, &m.Domain, &m.DNSProviderID, &m.ZoneID, &m.ZoneName, &m.Status, &m.StatusDetail, &checked, &m.CreatedAt, &m.UpdatedAt)
+	err := sc.Scan(&m.ID, &m.Domain, &m.DNSProviderID, &m.ZoneID, &m.ZoneName, &m.Status, &m.StatusDetail, &checked,
+		&m.PasswordSet, &m.Accounts, &m.CreatedAt, &m.UpdatedAt)
 	if checked.Valid {
 		t := checked.Time
 		m.CheckedAt = &t
@@ -151,11 +158,15 @@ func (s *Store) AuditMail(ctx context.Context, id int64, username, action string
 	return tx.Commit()
 }
 
-// DeleteMailDomain takes a domain off the list. Its DNS records stay.
+// DeleteMailDomain takes a domain off the list. Its DNS records stay. A
+// domain with email accounts can't go: their passwords would be lost.
 func (s *Store) DeleteMailDomain(ctx context.Context, id int64, username string) error {
 	m, err := s.GetMailDomain(ctx, id)
 	if err != nil {
 		return err
+	}
+	if m.Accounts > 0 {
+		return ConflictError(fmt.Sprintf("%s has %d email account(s); delete them first", m.Domain, m.Accounts))
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

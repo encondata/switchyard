@@ -190,6 +190,8 @@ type fakePurelymail struct {
 	mu      sync.Mutex
 	domains map[string]bool
 	calls   []string
+	users   map[string]string // address -> password
+	refuse  map[string]bool   // addresses whose password change fails
 }
 
 func (f *fakePurelymail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +219,182 @@ func (f *fakePurelymail) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"type":"success","result":{}}`))
 	case "/updateDomainSettings":
 		_, _ = w.Write([]byte(`{"type":"success","result":{}}`))
+	case "/listUser":
+		us := []string{}
+		for u := range f.users {
+			us = append(us, u)
+		}
+		b, _ := json.Marshal(us)
+		_, _ = w.Write([]byte(`{"type":"success","result":{"users":` + string(b) + `}}`))
+	case "/createUser":
+		if body["sendWelcomeEmail"] != false || body["enablePasswordReset"] != false {
+			w.WriteHeader(400)
+			return
+		}
+		f.users[body["userName"].(string)+"@"+body["domainName"].(string)] = body["password"].(string)
+		_, _ = w.Write([]byte(`{"type":"success","result":{}}`))
+	case "/modifyUser":
+		u := body["userName"].(string)
+		if _, ok := f.users[u]; !ok || f.refuse[u] {
+			_, _ = w.Write([]byte(`{"type":"error","code":"userNotFound","message":"No such user"}`))
+			return
+		}
+		f.users[u] = body["newPassword"].(string)
+		_, _ = w.Write([]byte(`{"type":"success","result":{}}`))
+	case "/deleteUser":
+		delete(f.users, body["userName"].(string))
+		_, _ = w.Write([]byte(`{"type":"success","result":{}}`))
 	}
+}
+
+func TestMailAccountsAPI(t *testing.T) {
+	c, st, pid, _ := newMailServer(t, nil)
+	pm := &fakePurelymail{domains: map[string]bool{}, users: map[string]string{"old@example.com": "hand-made-pw-1", "x@other.com": "p"}, refuse: map[string]bool{}}
+	pms := httptest.NewServer(pm)
+	t.Cleanup(pms.Close)
+	old := purelymail.APIBaseURL
+	purelymail.APIBaseURL = pms.URL
+	t.Cleanup(func() { purelymail.APIBaseURL = old })
+
+	_, body := c.do("POST", "/api/mail/domains", `{"domain":"example.com","dns_provider_id":`+pid+`}`)
+	id := strconv.Itoa(int(body["domain"].(map[string]any)["id"].(float64)))
+	base := "/api/mail/domains/" + id
+
+	// No key yet: listing works, creating needs the key.
+	if code, body := c.do("GET", base+"/accounts", ""); code != 200 || body["key_set"] != false || len(body["defaults"].([]any)) != 4 {
+		t.Fatalf("list without key = %d %v", code, body)
+	}
+	if code, _ := c.do("PUT", "/api/mail/settings", `{"api_key":"pm-key-0123456789"}`); code != 200 {
+		t.Fatal("saving key failed")
+	}
+	// The shared password comes first.
+	if code, body := c.do("POST", base+"/accounts", `{"names":["info"]}`); code != 400 || body["fields"].(map[string]any)["password"] == nil {
+		t.Fatalf("create without password = %d %v", code, body)
+	}
+	if code, _ := c.do("PUT", base+"/password", `{"password":"short"}`); code != 400 {
+		t.Fatalf("short password = %d", code)
+	}
+	shared := "Shared-pass-0123456789"
+	if code, body := c.do("PUT", base+"/password", `{"password":"`+shared+`"}`); code != 200 || body["domain"].(map[string]any)["password_set"] != true {
+		t.Fatalf("set password = %d %v", code, body)
+	}
+
+	// The four defaults, a duplicate, a bad name and one that exists at Purelymail.
+	code, body := c.do("POST", base+"/accounts", `{"names":["noreply","Info","system","alerts","info","bad name","old"]}`)
+	if code != 200 {
+		t.Fatalf("create = %d %v", code, body)
+	}
+	errs := map[string]string{}
+	for _, r := range body["results"].([]any) {
+		r := r.(map[string]any)
+		e, _ := r["error"].(string)
+		errs[r["name"].(string)] = e
+	}
+	if len(errs) != 6 || errs["noreply"] != "" || errs["info"] != "" || errs["bad name"] == "" || !strings.Contains(errs["old"], "already exists at Purelymail") {
+		t.Fatalf("results = %v", errs)
+	}
+	for _, a := range []string{"noreply", "info", "system", "alerts"} {
+		if pm.users[a+"@example.com"] != shared {
+			t.Fatalf("%s at purelymail = %q", a, pm.users[a+"@example.com"])
+		}
+	}
+	if others := body["others"].([]any); len(others) != 1 || others[0] != "old@example.com" {
+		t.Fatalf("others = %v", others)
+	}
+	// Taking over the hand-made one sets its password.
+	if _, body = c.do("POST", base+"/accounts", `{"names":["old"],"take_over":true}`); body["results"].([]any)[0].(map[string]any)["error"] != nil {
+		t.Fatalf("take over = %v", body)
+	}
+	if pm.users["old@example.com"] != shared || len(body["others"].([]any)) != 0 || len(body["accounts"].([]any)) != 5 {
+		t.Fatalf("after take over: %v %v", pm.users, body)
+	}
+	accounts := map[string]string{}
+	for _, a := range body["accounts"].([]any) {
+		a := a.(map[string]any)
+		accounts[a["local_part"].(string)] = strconv.Itoa(int(a["id"].(float64)))
+		if a["on_purelymail"] != true || a["password"] != nil {
+			t.Fatalf("account = %v", a)
+		}
+	}
+
+	// Passwords show on request.
+	if _, body = c.do("POST", base+"/password/reveal", ""); body["password"] != shared {
+		t.Fatalf("reveal shared = %v", body)
+	}
+	if _, body = c.do("POST", "/api/mail/accounts/"+accounts["info"]+"/password/reveal", ""); body["password"] != shared {
+		t.Fatalf("reveal info = %v", body)
+	}
+	// One account gets its own; changing the shared one leaves it alone.
+	own := "Own-password-for-alerts"
+	if code, _ := c.do("PUT", "/api/mail/accounts/"+accounts["alerts"]+"/password", `{"password":"`+own+`"}`); code != 200 || pm.users["alerts@example.com"] != own {
+		t.Fatalf("own password = %d", code)
+	}
+	pm.refuse["system@example.com"] = true
+	next := "Next-shared-0123456789"
+	code, body = c.do("PUT", base+"/password", `{"password":"`+next+`"}`)
+	if code != 200 || len(body["failed"].([]any)) != 1 {
+		t.Fatalf("change shared = %d %v", code, body)
+	}
+	if pm.users["info@example.com"] != next || pm.users["alerts@example.com"] != own || pm.users["system@example.com"] != shared {
+		t.Fatalf("passwords at purelymail = %v", pm.users)
+	}
+	// system kept the old password, now as its own, so what's shown is right.
+	if _, body = c.do("POST", "/api/mail/accounts/"+accounts["system"]+"/password/reveal", ""); body["password"] != shared {
+		t.Fatalf("system shown = %v", body)
+	}
+	if _, body = c.do("POST", "/api/mail/accounts/"+accounts["info"]+"/password/reveal", ""); body["password"] != next {
+		t.Fatalf("info shown = %v", body)
+	}
+	// Back on the shared password.
+	pm.refuse = map[string]bool{}
+	if code, _ := c.do("PUT", "/api/mail/accounts/"+accounts["system"]+"/password", `{"use_domain":true}`); code != 200 || pm.users["system@example.com"] != next {
+		t.Fatalf("use domain = %d %v", code, pm.users)
+	}
+	// Every account refusing changes nothing.
+	for _, a := range []string{"noreply", "info", "system", "old"} {
+		pm.refuse[a+"@example.com"] = true
+	}
+	if code, _ := c.do("PUT", base+"/password", `{"password":"Third-shared-0123456789"}`); code != 502 {
+		t.Fatalf("all refused = %d", code)
+	}
+	if m, _ := st.GetMailDomain(context.Background(), mustAtoi(t, id)); m.Accounts != 5 {
+		t.Fatalf("accounts = %d", m.Accounts)
+	}
+
+	// Audit: reveals logged, passwords never written down.
+	if _, entries := c.doList("GET", "/api/audit?entity=mail_account"); len(entries) == 0 {
+		t.Fatal("no mail_account audit entries")
+	} else {
+		raw, _ := json.Marshal(entries)
+		for _, pw := range []string{shared, next, own} {
+			if strings.Contains(string(raw), pw) {
+				t.Fatalf("audit log holds a password")
+			}
+		}
+	}
+
+	// The domain can't go while it has accounts; deleting one deletes it at Purelymail.
+	if code, _ := c.do("DELETE", base, ""); code != 409 {
+		t.Fatalf("delete domain with accounts = %d", code)
+	}
+	if code, _ := c.do("DELETE", "/api/mail/accounts/"+accounts["noreply"], ""); code != 204 {
+		t.Fatalf("delete account = %d", code)
+	}
+	if _, ok := pm.users["noreply@example.com"]; ok {
+		t.Fatal("still at purelymail")
+	}
+	if _, ok := pm.users["x@other.com"]; !ok {
+		t.Fatal("another domain's user went")
+	}
+}
+
+func mustAtoi(t *testing.T, s string) int64 {
+	t.Helper()
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
 
 func TestMailPurelymailAPI(t *testing.T) {

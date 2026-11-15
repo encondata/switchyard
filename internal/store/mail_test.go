@@ -74,3 +74,20 @@ func TestPurelymailOwnership(t *testing.T) {
 		t.Fatalf("ChangesSince = %d, %v", n, err)
 	}
 }
+
+func TestMailAccountNamesAndPasswords(t *testing.T) {
+	for in, want := range map[string]string{" Info ": "info", "no-reply": "no-reply", "a.b+c@example.com": "a.b+c"} {
+		if got, err := NormalizeLocalPart(in); err != nil || got != want {
+			t.Errorf("NormalizeLocalPart(%q) = %q, %v", in, got, err)
+		}
+	}
+	for _, bad := range []string{"", "-x", "x-", "a..b", "bad name", "é"} {
+		if _, err := NormalizeLocalPart(bad); err == nil {
+			t.Errorf("NormalizeLocalPart(%q) accepted", bad)
+		}
+	}
+	if CheckMailPassword("Long-enough-pw") != nil || CheckMailPassword("short") == nil ||
+		CheckMailPassword(" Long-enough-pw") == nil || CheckMailPassword("Long-enough\npw") == nil {
+		t.Error("CheckMailPassword")
+	}
+}

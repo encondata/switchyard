@@ -12,6 +12,7 @@ import {
   LogOut,
   Mail,
   Moon,
+  Plug,
   Search,
   ShieldCheck,
   Sun,
@@ -116,6 +117,12 @@ export function Sidebar({
       items: [
         { path: '/users', label: 'Users', icon: Users, admin: true },
         { path: '/api-keys', label: 'API keys', icon: KeyRound, admin: true },
+        {
+          path: '/connections',
+          label: 'External connections',
+          icon: Plug,
+          admin: true,
+        },
       ],
     },
   ]
@@ -227,6 +234,7 @@ const pageNames: Record<string, string> = {
   account: 'Account',
   import: 'Import from NPM',
   'api-keys': 'API keys',
+  connections: 'External connections',
   'api-docs': 'API reference',
 }
 

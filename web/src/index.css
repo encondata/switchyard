@@ -2520,8 +2520,98 @@ details summary {
   font-size: 0.95rem;
 }
 
+.pm-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin: 0.25rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+.pm-connection .hint {
+  margin: 0;
+}
+
 @media (max-width: 560px) {
   .pm-settings {
     grid-template-columns: 1fr;
   }
+}
+
+/* Email accounts on a mail domain */
+.mail-shared,
+.add-accounts,
+.pm-others {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.mail-shared h3,
+.add-accounts h3,
+.pm-others h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.mail-shared .hint {
+  margin: 0.15rem 0 0;
+}
+
+.pw-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pw-value code {
+  white-space: nowrap;
+}
+
+.pw-value .icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+}
+
+.pw-value .icon-btn:hover {
+  color: var(--text);
+}
+
+.pw-form,
+.add-account {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 32rem;
+}
+
+.pw-form {
+  margin-top: 0.5rem;
+}
+
+.pw-input,
+.address-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pw-input input,
+.address-input input {
+  flex: 1;
+  min-width: 0;
+}
+
+.mail-accounts td {
+  vertical-align: top;
+}
+
+.pm-others li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }

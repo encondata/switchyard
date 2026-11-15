@@ -150,6 +150,38 @@ export type MailDomain = {
   status: '' | 'ok' | 'incomplete' | 'conflict' | 'error'
   status_detail?: string
   checked_at: string | null
+  /** Whether the shared account password is set (shown only on request). */
+  password_set: boolean
+  accounts: number
+}
+
+export type MailAccount = {
+  id: number
+  domain_id: number
+  local_part: string
+  address: string
+  /** True when it doesn't use the domain's shared password. */
+  own_password: boolean
+  /** Whether Purelymail has it; absent when Purelymail couldn't be asked. */
+  on_purelymail?: boolean
+  created_at: string
+}
+
+export type MailAccounts = {
+  domain: MailDomain
+  accounts: MailAccount[]
+  /** Addresses on the domain at Purelymail that aren't managed here. */
+  others: string[]
+  defaults: string[]
+  key_set: boolean
+  error?: string
+}
+
+export type MailAccountResult = {
+  name: string
+  address?: string
+  error?: string
+  exists?: boolean
 }
 
 export type CFRecord = {
@@ -948,6 +980,39 @@ export const api = {
     request<MailCheck>('POST', `/api/mail/domains/${id}/records`, { replace }),
   deleteMailDomain: (id: number) =>
     request<void>('DELETE', `/api/mail/domains/${id}`),
+  mailAccounts: (id: number) =>
+    request<MailAccounts>('GET', `/api/mail/domains/${id}/accounts`),
+  addMailAccounts: (
+    id: number,
+    body: { names: string[]; password?: string; take_over?: boolean },
+  ) =>
+    request<MailAccounts & { results: MailAccountResult[] }>(
+      'POST',
+      `/api/mail/domains/${id}/accounts`,
+      body,
+    ),
+  setMailDomainPassword: (id: number, password: string) =>
+    request<MailAccounts & { failed: { address: string; error: string }[] }>(
+      'PUT',
+      `/api/mail/domains/${id}/password`,
+      { password },
+    ),
+  revealMailDomainPassword: (id: number) =>
+    request<{ password: string }>(
+      'POST',
+      `/api/mail/domains/${id}/password/reveal`,
+    ),
+  setMailAccountPassword: (
+    id: number,
+    body: { password?: string; use_domain?: boolean },
+  ) => request<MailAccounts>('PUT', `/api/mail/accounts/${id}/password`, body),
+  revealMailAccountPassword: (id: number) =>
+    request<{ password: string }>(
+      'POST',
+      `/api/mail/accounts/${id}/password/reveal`,
+    ),
+  deleteMailAccount: (id: number) =>
+    request<void>('DELETE', `/api/mail/accounts/${id}`),
 }
 
 export function message(err: unknown): string {
