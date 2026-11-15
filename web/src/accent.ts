@@ -2,6 +2,7 @@
 export const accentPresets: { name: string; hex: string }[] = [
   { name: 'Switchyard', hex: '' },
   { name: 'Green', hex: '#0e7c61' },
+  { name: 'Teal', hex: '#038076' },
   { name: 'Blue', hex: '#2563eb' },
   { name: 'Indigo', hex: '#4f46e5' },
   { name: 'Purple', hex: '#7c3aed' },
@@ -11,7 +12,7 @@ export const accentPresets: { name: string; hex: string }[] = [
   { name: 'Slate', hex: '#475569' },
 ]
 
-export const defaultAccent = '#038076'
+export const defaultAccent = '#0072b1'
 
 const storageKey = 'cpm-accent'
 
