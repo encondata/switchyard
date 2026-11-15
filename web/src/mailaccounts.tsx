@@ -276,7 +276,9 @@ export function AccountsCard({
       )}
       {data && !data.key_set && (
         <p className="hint">
-          Add a Purelymail API key above to create and change accounts.
+          Creating and changing accounts needs a Purelymail API key. An
+          administrator adds it under{' '}
+          <a href="#/connections">External connections</a>.
         </p>
       )}
       {data?.error && (

@@ -129,14 +129,6 @@ export function MailPage({
 
   return (
     <div className="stack">
-      <PurelymailCard
-        settings={settings}
-        isAdmin={isAdmin}
-        onSaved={(v) => {
-          setSettings(v)
-          if (check) void open(check.domain)
-        }}
-      />
       <section className="card">
         <h1>Mail domains</h1>
         <p className="hint">
@@ -146,6 +138,7 @@ export function MailPage({
           and adds the missing ones. Nothing is deleted unless you choose to
           replace it.
         </p>
+        <PurelymailStatusLine settings={settings} isAdmin={isAdmin} />
         {error && (
           <p className="error" role="alert">
             {error}
@@ -266,155 +259,44 @@ export function MailPage({
   )
 }
 
-function PurelymailCard({
+/** Whether the Purelymail connection is set up, with a way to it. */
+function PurelymailStatusLine({
   settings,
   isAdmin,
-  onSaved,
 }: {
   settings: MailSettings | null
   isAdmin: boolean
-  onSaved: (v: MailSettings) => void
 }) {
-  const [editing, setEditing] = useState<'key' | 'ownership' | null>(null)
-  const [draft, setDraft] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function save(body: Parameters<typeof api.saveMailSettings>[0]) {
-    setError(null)
-    setBusy(true)
-    try {
-      onSaved(await api.saveMailSettings(body))
-      setEditing(null)
-      setDraft('')
-    } catch (err) {
-      setError(
-        err instanceof ApiError && (err.fields.api_key || err.fields.ownership)
-          ? (err.fields.api_key ?? err.fields.ownership)
-          : message(err),
-      )
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  function submit(e: FormEvent) {
-    e.preventDefault()
-    void save(editing === 'key' ? { api_key: draft } : { ownership: draft })
-  }
-
-  function edit(what: 'key' | 'ownership') {
-    setError(null)
-    setDraft(what === 'ownership' ? (settings?.ownership ?? '') : '')
-    setEditing(what)
-  }
-
   if (settings === null) return null
-  const { ownership, key_set: keySet } = settings
+  const where = isAdmin ? (
+    <a href="#/connections">External connections</a>
+  ) : (
+    'External connections (administrators)'
+  )
   return (
-    <section className="card">
-      <h2>Purelymail account</h2>
-      <p className="hint">
-        With an API key, Switchyard fetches your ownership proof, adds domains
-        to Purelymail once their records are in, and shows what Purelymail sees.
-        Create the key in Purelymail’s account settings (API access). Without
-        one, paste the ownership proof by hand: Purelymail shows it on its{' '}
-        <strong>Add new domain</strong> page.
-      </p>
-      <div className="pm-settings">
-        <span className="pm-label">API key</span>
-        <div className="actions">
-          {keySet ? (
-            <span className="badge cert-valid">Saved</span>
-          ) : (
-            <span className="badge cert-not_needed">Not set</span>
-          )}
-          {isAdmin && editing !== 'key' && (
-            <>
-              <button className="secondary small" onClick={() => edit('key')}>
-                {keySet ? 'Replace' : 'Add API key'}
-              </button>
-              {keySet && (
-                <button
-                  className="link danger"
-                  disabled={busy}
-                  onClick={() => {
-                    if (
-                      confirm(
-                        'Remove the Purelymail API key? The ownership proof stays.',
-                      )
-                    )
-                      void save({ clear_key: true })
-                  }}
-                >
-                  Remove
-                </button>
-              )}
-            </>
-          )}
-        </div>
-        <span className="pm-label">Ownership proof</span>
-        <div className="actions">
-          {ownership ? (
-            <span className="mono pm-proof">{ownership}</span>
+    <div className="pm-connection">
+      <span>Purelymail API key</span>
+      {settings.key_set ? (
+        <span className="badge cert-valid">Saved</span>
+      ) : (
+        <span className="badge cert-not_needed">Not set</span>
+      )}
+      {!settings.key_set && (
+        <>
+          <span>Ownership proof</span>
+          {settings.ownership ? (
+            <span className="badge cert-valid">Set</span>
           ) : (
             <span className="badge cert-pending">Not set</span>
           )}
-          {keySet && ownership && <span className="hint">from Purelymail</span>}
-          {isAdmin && !keySet && editing !== 'ownership' && (
-            <button
-              className="secondary small"
-              onClick={() => edit('ownership')}
-            >
-              {ownership ? 'Change' : 'Set by hand'}
-            </button>
-          )}
-          {!isAdmin && !ownership && (
-            <span className="hint">An administrator needs to set it.</span>
-          )}
-        </div>
-      </div>
-      {editing && (
-        <form className="actions wildcard-form" onSubmit={submit}>
-          <label className="grow">
-            {editing === 'key' ? 'Purelymail API key' : 'Ownership TXT value'}
-            <input
-              className="mono"
-              type={editing === 'key' ? 'password' : 'text'}
-              autoFocus
-              required={editing === 'key'}
-              autoComplete="off"
-              placeholder={
-                editing === 'key' ? '' : 'purelymail_ownership_proof=…'
-              }
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-            />
-          </label>
-          <button disabled={busy}>
-            {busy && editing === 'key' ? 'Checking with Purelymail…' : 'Save'}
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => setEditing(null)}
-          >
-            Cancel
-          </button>
-        </form>
+        </>
       )}
-      {editing === 'key' && (
-        <p className="hint">
-          Switchyard checks the key with Purelymail before saving it, and keeps
-          it encrypted. It’s never shown again.
-        </p>
-      )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-    </section>
+      <span className="hint">
+        {settings.key_set ? 'Manage in ' : 'Add one in '}
+        {where}
+        {!settings.key_set && ' to create email accounts.'}
+      </span>
+    </div>
   )
 }
 

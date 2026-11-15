@@ -87,7 +87,7 @@ func (s *srv) pathMailDomain(w http.ResponseWriter, r *http.Request) (store.Mail
 func (s *srv) needPurelymail(w http.ResponseWriter, r *http.Request) (purelymail.Client, bool) {
 	pm, ok := s.purelymailClient(r.Context())
 	if !ok {
-		writeError(w, http.StatusConflict, "conflict", "Save a Purelymail API key first.")
+		writeError(w, http.StatusConflict, "conflict", "Add a Purelymail API key under External connections first.")
 	}
 	return pm, ok
 }

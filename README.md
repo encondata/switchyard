@@ -44,8 +44,8 @@ Work tracking: Harbor Master project `CPM`.
   and Switchyard checks its DNS against Purelymail's records (MX, SPF,
   ownership proof, three DKIM keys, DMARC), adds the missing ones, and
   replaces records in the way (an old MX or SPF) only when you tick them.
-  Deleted records are kept in the audit log. With a Purelymail API key it
-  also fetches the ownership proof, adds the domain to Purelymail and shows
+  Deleted records are kept in the audit log. With a Purelymail API key
+  (Administration → External connections) it also fetches the ownership proof, adds the domain to Purelymail and shows
   Purelymail's own verdict on each record. **Email accounts:** each domain
   has a shared password; one click creates noreply, info, system and alerts
   at Purelymail with it, and other addresses can be added with the shared
@@ -54,7 +54,9 @@ Work tracking: Harbor Master project `CPM`.
   changes it at Purelymail for every account that uses it.
 - **Admin:** users with admin / editor / viewer roles, TOTP two-factor
   sign-in (can be required), sign-in rate limits, audit log, alerts, health
-  page, backup and restore, NPM importer.
+  page, backup and restore, NPM importer. **External connections** holds
+  the accounts and API keys for other services (Purelymail so far), stored
+  encrypted.
 
 ## Install
 

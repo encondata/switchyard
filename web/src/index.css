@@ -2520,6 +2520,19 @@ details summary {
   font-size: 0.95rem;
 }
 
+.pm-connection {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.6rem;
+  margin: 0.25rem 0 1rem;
+  font-size: 0.9rem;
+}
+
+.pm-connection .hint {
+  margin: 0;
+}
+
 @media (max-width: 560px) {
   .pm-settings {
     grid-template-columns: 1fr;
