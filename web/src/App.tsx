@@ -3,7 +3,6 @@ import { api, ApiError, type Alert, type Preview, type User } from './api'
 import { ChangePassword, Login } from './auth'
 import { Changes, History } from './config'
 import { AccessPage } from './access'
-import { DNSPage } from './dns'
 import { MailPage } from './mail'
 import { Certificates, HealthPage } from './ops'
 import { HostEditor, HostList } from './hosts'
@@ -143,8 +142,11 @@ function App() {
   else if (route === '/audit' && user.role === 'admin') body = <AuditPage />
   else if (route === '/api-keys' && user.role === 'admin')
     body = <ApiKeysPage />
-  else if (route === '/connections' && user.role === 'admin')
-    body = <ConnectionsPage />
+  else if (
+    (route === '/connections' || route === '/dns') &&
+    user.role === 'admin'
+  )
+    body = <ConnectionsPage onChanged={refreshPending} />
   else if (route === '/api-docs') body = <ApiDocsPage />
   else if (route === '/import' && user.role === 'admin')
     body = <ImportPage onImported={refreshPending} />
@@ -210,10 +212,6 @@ function App() {
         <WildcardCard canEdit={canEdit} onChanged={refreshPending} />
         <Certificates canEdit={canEdit} />
       </div>
-    )
-  else if (route === '/dns')
-    body = (
-      <DNSPage isAdmin={user.role === 'admin'} onChanged={refreshPending} />
     )
   else if (route === '/mail')
     body = <MailPage canEdit={canEdit} isAdmin={user.role === 'admin'} />

@@ -1187,8 +1187,8 @@ export function HostEditor({
             <FieldError msg={fields.dns_provider_id} />
             {providers.length === 0 && (
               <span className="hint">
-                No DNS providers yet. Add your Cloudflare token on the{' '}
-                <a href="#/dns">DNS</a> page.
+                No DNS providers yet. Add your Cloudflare token under{' '}
+                <a href="#/connections">External connections</a>.
               </span>
             )}
           </label>

@@ -425,7 +425,7 @@ func tlsFrom(r row, certs map[int64]row, opts Options, h *store.Host, ph *Planne
 		h.DNSProviderID = &id
 	case dns || wildcard:
 		h.TLSMode = store.TLSInternal
-		ph.Warnings = append(ph.Warnings, "Used a DNS-challenge certificate in NPM. Add your Cloudflare token on the DNS page, then switch this host to “DNS challenge”; it's set to the internal CA for now.")
+		ph.Warnings = append(ph.Warnings, "Used a DNS-challenge certificate in NPM. Add your Cloudflare token under Administration → External connections, then switch this host to “DNS challenge”; it's set to the internal CA for now.")
 	default:
 		h.TLSMode = store.TLSAuto
 	}

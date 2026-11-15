@@ -375,8 +375,9 @@ function AddDomainForm({
       </form>
       {providers.length === 0 && (
         <p className="hint">
-          Add a Cloudflare DNS provider first, on the <a href="#/dns">DNS</a>{' '}
-          page. Its token needs Zone → DNS → Edit on the domain’s zone.
+          Add a Cloudflare token first, under{' '}
+          <a href="#/connections">External connections</a>. It needs Zone → DNS
+          → Edit on the domain’s zone.
         </p>
       )}
       {error && !Object.keys(fields).length && (
