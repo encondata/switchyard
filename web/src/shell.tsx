@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import {
   Activity,
   Crosshair,
@@ -21,31 +28,50 @@ import {
 import { api, type Alert, type HostView, type User } from './api'
 import { NotificationBell } from './notify'
 
-/** The Switchyard mark: an S of track with two rails switching across it. */
+/**
+ * The Hackspacelabs H: warm bands over cool ones, split by a gap that
+ * steps up across the crossbar. Drawn on a 700 × 670 grid (the H spans
+ * 35–665 × 45–630).
+ */
+const markH =
+  'M95 45H215L255 85V240H445V85L485 45H605L665 105V570L605 630H485L445 590V465H255V590L215 630H95L35 570V105Z'
+// The gap between warm and cool, as a centre line.
+const markGap =
+  'M0 434H168C206 434 206 374 244 374H446C496 374 496 277 546 277H700'
+// [colour, lower edge] from the top band down; navy fills the rest.
+const markBands: [string, string][] = [
+  ['#fbae2c', 'M0 112C150 92 260 138 410 118S610 96 700 100'],
+  ['#ffc760', 'M0 176C150 160 260 196 420 170S620 142 700 142'],
+  ['#fb7d24', 'M0 272C140 256 260 292 400 276S600 226 700 222'],
+  ['#ec2d1d', 'M0 338C150 318 300 352 450 332S620 282 700 277'],
+  ['#d81f27', markGap],
+  ['#74d4ec', 'M0 470C150 456 280 470 420 440S600 352 700 346'],
+  ['#0fb0d6', 'M0 522C160 506 300 520 450 496S620 432 700 422'],
+  ['#0a8dba', 'M0 562C160 546 320 560 460 546S620 502 700 496'],
+]
+
 export function Mark({ size = 34 }: { size?: number }) {
+  const id = 'mark' + useId().replace(/[^a-zA-Z0-9_-]/g, '')
   return (
     <svg
       className="mark"
-      viewBox="133 183 362 320"
+      viewBox="35 45 630 585"
       width={size}
-      height={(size * 320) / 362}
+      height={(size * 585) / 630}
       aria-hidden="true"
     >
-      <path
-        className="mark-track"
-        d="M495 207 H216.5 A59.5 59.5 0 0 0 216.5 326 H277 L352 376 H418.5 A51.5 51.5 0 0 1 418.5 479 H133"
-        fill="none"
-        strokeWidth="48"
-        strokeLinejoin="round"
-      />
-      <path
-        className="mark-rail"
-        d="M495 251 H343 L302 288 L308 299 H315 L335 319 L355 299 H495 Z"
-      />
-      <path
-        className="mark-rail"
-        d="M133 437 H264 L305 400 L299 389 H292 L272 369 L252 389 H133 Z"
-      />
+      <mask id={id}>
+        <path d={markH} fill="#fff" />
+        <path d={markGap} fill="none" stroke="#000" strokeWidth="16" />
+      </mask>
+      <g mask={`url(#${id})`}>
+        <rect x="0" y="0" width="700" height="670" fill="#003e65" />
+        {markBands
+          .map(([fill, edge]) => (
+            <path key={fill} d={`${edge}V0H0Z`} fill={fill} />
+          ))
+          .reverse()}
+      </g>
     </svg>
   )
 }
