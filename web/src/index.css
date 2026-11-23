@@ -2604,3 +2604,36 @@ details summary {
   align-items: center;
   gap: 0.75rem;
 }
+
+/* ---------- Sign in with HackSpaceLabs ---------- */
+
+a.button.sso-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  background: var(--surface);
+  color: var(--logo-ink);
+  border: 1px solid var(--border-strong);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+a.button.sso-button:hover {
+  background: var(--surface-2);
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  border-top: 1px solid var(--border);
+}

@@ -10,6 +10,17 @@ export type User = {
   totp_enabled: boolean
   must_enroll_2fa: boolean
   created_at?: string
+  /** 'oidc': made by Sign in with HackSpaceLabs; has no password here. */
+  auth_source?: 'local' | 'oidc'
+  display_name?: string
+  email?: string
+}
+
+/** Sign-in options (GET /api/auth/config). */
+export type AuthConfig = {
+  oidc: { enabled: boolean; auto_redirect: boolean }
+  portal_url: string
+  apps: { id: string; name: string; url: string }[]
 }
 
 export type LoginResult = User | { totp_required: true; challenge: string }
@@ -671,6 +682,7 @@ async function request<T>(
 
 export const api = {
   me: () => request<User>('GET', '/api/auth/me'),
+  authConfig: () => request<AuthConfig>('GET', '/api/auth/config'),
   preferences: () => request<Prefs>('GET', '/api/auth/preferences'),
   savePreferences: (p: Prefs) =>
     request<Prefs>('PUT', '/api/auth/preferences', p),
@@ -711,7 +723,9 @@ export const api = {
     if (q.user) p.set('user', q.user)
     return request<AuditEntry[]>('GET', `/api/audit?${p.toString()}`)
   },
-  logout: () => request<void>('POST', '/api/auth/logout'),
+  /** A HackSpaceLabs session answers with Keycloak's sign-out address. */
+  logout: () =>
+    request<{ redirect?: string } | undefined>('POST', '/api/auth/logout'),
   changePassword: (current_password: string, new_password: string) =>
     request<User>('POST', '/api/auth/password', {
       current_password,

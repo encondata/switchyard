@@ -1,7 +1,25 @@
 import { useState, type FormEvent } from 'react'
-import { api, ApiError, message, type User } from './api'
+import { api, ApiError, message, type AuthConfig, type User } from './api'
+import { ssoError } from './sso'
+import { SsoButton } from './sso-ui'
 
-export function Login({ onSignedIn }: { onSignedIn: (u: User) => void }) {
+export function Login({
+  onSignedIn,
+  config,
+}: {
+  onSignedIn: (u: User) => void
+  config: AuthConfig | null
+}) {
+  const params = new URLSearchParams(location.search)
+  const errorCode = params.get('error')
+  const sso = !!config?.oidc.enabled
+  // With HackSpaceLabs sign-in doing the work, the local form is for administrators when it is down.
+  const [showLocal, setShowLocal] = useState(
+    !sso ||
+      !config?.oidc.auto_redirect ||
+      params.has('local') ||
+      errorCode === 'sso_unavailable',
+  )
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [challenge, setChallenge] = useState<string | null>(null)
@@ -76,14 +94,74 @@ export function Login({ onSignedIn }: { onSignedIn: (u: User) => void }) {
   return (
     <form className="card narrow" onSubmit={submit}>
       <h1>Sign in</h1>
+      {errorCode && (
+        <p className="error" role="alert">
+          {ssoError(errorCode)}
+        </p>
+      )}
+      {sso && (
+        <>
+          <SsoButton />
+          {errorCode === 'no_access' && (
+            <a
+              className="link"
+              href="/api/auth/oidc/login?prompt=login&next=%2F"
+            >
+              Use a different HackSpaceLabs account
+            </a>
+          )}
+        </>
+      )}
+      {sso && !showLocal && (
+        <button
+          type="button"
+          className="link"
+          onClick={() => setShowLocal(true)}
+        >
+          Use a local account
+        </button>
+      )}
+      {sso && showLocal && (
+        <div className="divider">or with a local account</div>
+      )}
+      {showLocal && (
+        <LocalFields
+          username={username}
+          password={password}
+          setUsername={setUsername}
+          setPassword={setPassword}
+          autoFocus={!sso}
+        />
+      )}
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      {showLocal && (
+        <button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+      )}
+    </form>
+  )
+}
+
+function LocalFields(p: {
+  username: string
+  password: string
+  setUsername: (v: string) => void
+  setPassword: (v: string) => void
+  autoFocus: boolean
+}) {
+  return (
+    <>
       <label>
         Username
         <input
           autoComplete="username"
-          autoFocus
+          autoFocus={p.autoFocus}
           required
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
+          value={p.username}
+          onChange={(e) => p.setUsername(e.target.value)}
         />
       </label>
       <label>
@@ -92,17 +170,11 @@ export function Login({ onSignedIn }: { onSignedIn: (u: User) => void }) {
           type="password"
           autoComplete="current-password"
           required
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          value={p.password}
+          onChange={(e) => p.setPassword(e.target.value)}
         />
       </label>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-    </form>
+    </>
   )
 }
 

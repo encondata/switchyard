@@ -287,9 +287,12 @@ can't use it. Generated from `/api/openapi.json`.
 | `POST /api/auth/2fa/begin` | Start setting up two-factor sign-in | — | any signed-in user |
 | `POST /api/auth/2fa/confirm` | Confirm two-factor sign-in with a code | — | any signed-in user |
 | `POST /api/auth/2fa/disable` | Turn off two-factor sign-in | — | viewer or above |
+| `GET /api/auth/config` | Sign-in options: HackSpaceLabs sign-in, the portal and the app switcher | — | none (public) |
 | `POST /api/auth/login` | Sign in with a username and password | — | none (public) |
-| `POST /api/auth/logout` | Sign out | — | none (public) |
+| `POST /api/auth/logout` | Sign out (a HackSpaceLabs session answers with Keycloak's sign-out address to go to) | — | none (public) |
 | `GET /api/auth/me` | The signed-in user | — | any signed-in user |
+| `GET /api/auth/oidc/callback` | Where Keycloak returns after sign-in (redirects into the app) | — | none (public) |
+| `GET /api/auth/oidc/login` | Start signing in with HackSpaceLabs (redirects to Keycloak) | — | none (public) |
 | `POST /api/auth/password` | Change your password | — | any signed-in user |
 | `GET /api/auth/preferences` | Your display preferences | — | viewer or above |
 | `PUT /api/auth/preferences` | Save your display preferences | — | viewer or above |

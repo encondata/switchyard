@@ -66,6 +66,19 @@ services:
       CPM_ACME_EMAIL: ${CPM_ACME_EMAIL:-}
       # Countries: DB-IP's free database is downloaded monthly unless "off".
       CPM_GEOIP_DOWNLOAD: ${CPM_GEOIP_DOWNLOAD:-on}
+      # true once CPM is served over HTTPS.
+      CPM_SECURE_COOKIES: ${CPM_SECURE_COOKIES:-false}
+      # Sign in with HackSpaceLabs (see .env.example). Off unless the issuer,
+      # client secret, CPM_PUBLIC_URL and CPM_SECRET_KEY are all set.
+      CPM_PUBLIC_URL: ${CPM_PUBLIC_URL:-}
+      HSL_OIDC_ISSUER: ${HSL_OIDC_ISSUER:-}
+      HSL_OIDC_CLIENT_ID: ${HSL_OIDC_CLIENT_ID:-switchyard}
+      HSL_OIDC_CLIENT_SECRET: ${HSL_OIDC_CLIENT_SECRET:-}
+      HSL_OIDC_INTERNAL_URL: ${HSL_OIDC_INTERNAL_URL:-}
+      HSL_OIDC_AUTO_REDIRECT: ${HSL_OIDC_AUTO_REDIRECT:-false}
+      HSL_OIDC_RECHECK_SECONDS: ${HSL_OIDC_RECHECK_SECONDS:-60}
+      HSL_PORTAL_URL: ${HSL_PORTAL_URL:-}
+      HSL_SUITE_APPS: ${HSL_SUITE_APPS:-}
     volumes:
       - cpm-data:/data
       - caddy-applied:/caddy-applied

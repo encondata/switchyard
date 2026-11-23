@@ -52,7 +52,8 @@ Work tracking: Harbor Master project `CPM`.
   password or their own. Passwords are stored encrypted and editors can show
   or copy them again (each showing is audited). Changing the shared password
   changes it at Purelymail for every account that uses it.
-- **Admin:** users with admin / editor / viewer roles, TOTP two-factor
+- **Admin:** users with admin / editor / viewer roles, optional **Sign in
+  with HackSpaceLabs** (below), TOTP two-factor
   sign-in (can be required), sign-in rate limits, audit log, alerts, health
   page, backup and restore, NPM importer. **External connections** holds
   the accounts and API keys for other services (Cloudflare tokens and the
@@ -128,6 +129,29 @@ admins make on **Administration → API keys**, each limited to the
 operations you pick. See [docs/api.md](docs/api.md); the OpenAPI document
 is at `/api/openapi.json`.
 
+## Sign in with HackSpaceLabs
+
+Switchyard can let people sign in with their HackSpaceLabs account (the
+site's Keycloak), so one sign-in covers Switchyard and the other
+HackSpaceLabs apps. Set the `HSL_OIDC_*` settings and `CPM_PUBLIC_URL`
+below; the HackSpaceLabs installer creates the `switchyard` client and its
+roles and can write the settings for you.
+
+- Who gets in: anyone given a **Switchyard role** (admin, editor or viewer)
+  in the HackSpaceLabs portal, directly or through a group. Their highest
+  role applies. Nobody else gets an account.
+- The first sign-in makes a **HackSpaceLabs account** in Switchyard with the
+  person's HackSpaceLabs username. It has no password here and signs in only
+  through HackSpaceLabs. If a local account already has that username the
+  sign-in is refused: rename or remove one of them.
+- A session lasts as long as the HackSpaceLabs one: 96 hours, or 30 days with
+  "Keep me signed in". Switchyard rechecks it every minute: signing out
+  anywhere, being disabled or losing the Switchyard role ends it. If Keycloak
+  can't be reached, people stay signed in.
+- Local accounts keep working. Keep one local admin as the way in when
+  Keycloak is down (`/login?local=1` shows the form when auto-redirect is on).
+  Switchyard is often the proxy in front of Keycloak, so this matters.
+
 ## Run it by hand
 
 ```bash
@@ -166,6 +190,13 @@ docker compose --profile geoip up -d   # optional: MaxMind GeoLite2 instead of D
 | `CPM_LISTEN` | `0.0.0.0:8080` | CPM UI / API address |
 | `CPM_DATA_DIR` | `./data` (`/data` in Docker) | `cpm.db` (config) and `hits.db` (traffic) |
 | `CPM_SECURE_COOKIES` | `false` | Set `true` when CPM is served over HTTPS |
+| `CPM_PUBLIC_URL` | — | The address people use for CPM, e.g. `https://switchyard.example.com`. Needed for Sign in with HackSpaceLabs |
+| `HSL_OIDC_ISSUER` | — | Sign in with HackSpaceLabs: the Keycloak realm's issuer. Off unless this, the client secret, `CPM_PUBLIC_URL` and `CPM_SECRET_KEY` are set |
+| `HSL_OIDC_CLIENT_ID` / `HSL_OIDC_CLIENT_SECRET` | `switchyard` / — | CPM's Keycloak client |
+| `HSL_OIDC_INTERNAL_URL` | — | Origin for server-to-server calls to Keycloak, if CPM can't reach its public address |
+| `HSL_OIDC_AUTO_REDIRECT` | `false` | Send signed-out visitors straight to HackSpaceLabs (`/login?local=1` keeps the local form) |
+| `HSL_OIDC_RECHECK_SECONDS` | `60` | How often a HackSpaceLabs session is rechecked with Keycloak |
+| `HSL_PORTAL_URL` / `HSL_SUITE_APPS` | — | The HackSpaceLabs portal and the app switcher (`id\|name\|url,…`) |
 | `CPM_ACME_CA` | Caddy's default | ACME directory, e.g. Let's Encrypt staging |
 | `CPM_ACME_EMAIL` | — | ACME account contact |
 | `CPM_ACME_CA_ROOTS` | — | Extra CA roots for the ACME server (tests) |
