@@ -163,7 +163,7 @@ func (c *Client) provider(ctx context.Context) (*provider, error) {
 		if c.current != nil {
 			return c.current, nil
 		}
-		return nil, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return nil, fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	c.current = p
 	return p, nil
@@ -294,7 +294,7 @@ func (c *Client) Exchange(ctx context.Context, code string, f Flow) (Tokens, err
 		if errors.As(err, &re) && re.Response != nil && re.Response.StatusCode < 500 {
 			return Tokens{}, fmt.Errorf("%w: code exchange: %s", ErrRefused, re.ErrorCode)
 		}
-		return Tokens{}, fmt.Errorf("%w: code exchange: %v", ErrUnavailable, err)
+		return Tokens{}, fmt.Errorf("%w: code exchange: %w", ErrUnavailable, err)
 	}
 	return c.tokens(ctx, p, tok, "", f.Nonce)
 }
@@ -313,7 +313,7 @@ func (c *Client) Refresh(ctx context.Context, refreshToken, subject string) (Tok
 		if errors.As(err, &re) && re.ErrorCode == "invalid_grant" {
 			return Tokens{}, fmt.Errorf("%w: %s", ErrRefused, re.ErrorDescription)
 		}
-		return Tokens{}, fmt.Errorf("%w: refresh: %v", ErrUnavailable, err)
+		return Tokens{}, fmt.Errorf("%w: refresh: %w", ErrUnavailable, err)
 	}
 	if tok.RefreshToken == "" {
 		tok.RefreshToken = refreshToken
@@ -343,11 +343,11 @@ func (c *Client) tokens(ctx context.Context, p *provider, tok *oauth2.Token, sub
 func (c *Client) verify(ctx context.Context, p *provider, raw, nonce string) (Claims, error) {
 	idt, err := p.verifier.Verify(ctx, raw)
 	if err != nil {
-		return Claims{}, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+		return Claims{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
 	}
 	var cl Claims
 	if err := idt.Claims(&cl); err != nil {
-		return Claims{}, fmt.Errorf("%w: %v", ErrInvalidToken, err)
+		return Claims{}, fmt.Errorf("%w: %w", ErrInvalidToken, err)
 	}
 	if cl.Subject == "" {
 		return Claims{}, fmt.Errorf("%w: no subject", ErrInvalidToken)

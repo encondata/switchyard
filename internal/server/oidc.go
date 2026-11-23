@@ -91,6 +91,7 @@ func (s *srv) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 	// The flow cookie must be set on the host Keycloak sends the browser back to. Compare host names
 	// only: cookies ignore ports, and a proxy may drop the port from Host.
 	if pu, err := url.Parse(s.sso.PublicURL); err == nil && hostOnly(r.Host) != pu.Hostname() {
+		//nolint:gosec // G710: the target is the configured public URL; only the path and query come from the request.
 		http.Redirect(w, r, s.sso.PublicURL+r.URL.RequestURI(), http.StatusSeeOther)
 		return
 	}
@@ -225,6 +226,7 @@ func (s *srv) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("signed in with HackSpaceLabs", "username", u.Username, "remote", r.RemoteAddr)
 	_ = s.store.AuditEvent(r.Context(), u.Username, "sign_in", "session", u.ID,
 		map[string]string{"ip": clientIP(r), "method": "hackspacelabs"})
+	//nolint:gosec // G710: next was checked by hslsso.SafeNext when the sign-in started: a path on this site.
 	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
@@ -243,6 +245,7 @@ func sessionLifetime(t hslsso.Tokens) time.Duration {
 }
 
 func (s *srv) sealTokens(subject string, t hslsso.Tokens) (string, error) {
+	//nolint:gosec // G117: the tokens are marshaled only to be sealed with CPM_SECRET_KEY on the next line.
 	raw, err := json.Marshal(sealedTokens{Subject: subject, RefreshToken: t.RefreshToken, IDToken: t.IDToken})
 	if err != nil {
 		return "", err

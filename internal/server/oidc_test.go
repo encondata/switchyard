@@ -65,7 +65,22 @@ func newSSOServer(t *testing.T, recheck time.Duration) *ssoEnv {
 	return &ssoEnv{t: t, base: ts.URL, issuer: issuer, store: st, http: hc}
 }
 
-func (e *ssoEnv) get(path string) *http.Response {
+// result is what the tests look at in a response (its body is already read and closed).
+type result struct {
+	StatusCode int
+	Header     http.Header
+	cookies    []*http.Cookie
+}
+
+func (r result) Cookies() []*http.Cookie { return r.cookies }
+
+func done(resp *http.Response) result {
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	return result{StatusCode: resp.StatusCode, Header: resp.Header, cookies: resp.Cookies()}
+}
+
+func (e *ssoEnv) get(path string) result {
 	e.t.Helper()
 	target := path
 	if strings.HasPrefix(path, "/") {
@@ -75,9 +90,7 @@ func (e *ssoEnv) get(path string) *http.Response {
 	if err != nil {
 		e.t.Fatal(err)
 	}
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	return resp
+	return done(resp)
 }
 
 func (e *ssoEnv) post(path, body string) (int, map[string]any) {
@@ -119,12 +132,12 @@ func (e *ssoEnv) start(next string) string {
 }
 
 // signIn runs the whole flow as subject and returns the callback's response.
-func (e *ssoEnv) signIn(subject, next string) *http.Response {
+func (e *ssoEnv) signIn(subject, next string) result {
 	e.t.Helper()
 	return e.get(e.issuer.Authorize(e.t, e.start(next), subject))
 }
 
-func wantRedirect(t *testing.T, resp *http.Response, want string) {
+func wantRedirect(t *testing.T, resp result, want string) {
 	t.Helper()
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != want {
 		t.Fatalf("got %d -> %q, want 303 -> %q", resp.StatusCode, resp.Header.Get("Location"), want)
@@ -186,12 +199,11 @@ func TestSSOSessionsEndWhenSignInIsTurnedOff(t *testing.T) {
 	for _, c := range e.http.Jar.Cookies(u) {
 		req.AddCookie(c)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	raw, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusUnauthorized {
+	if resp := done(raw); resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("session survived with sign-in off: %d", resp.StatusCode)
 	}
 }
@@ -416,12 +428,11 @@ func TestSSOHostAndNext(t *testing.T) {
 	u, _ := url.Parse(e.base)
 	req, _ := http.NewRequest(http.MethodGet, e.base+"/api/auth/oidc/login?next=%2Fx", nil)
 	req.Host = "localhost:" + u.Port()
-	resp, err := e.http.Do(req)
+	raw, err := e.http.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = resp.Body.Close()
-	wantRedirect(t, resp, e.base+"/api/auth/oidc/login?next=%2Fx")
+	wantRedirect(t, done(raw), e.base+"/api/auth/oidc/login?next=%2Fx")
 	// An outside address in next is ignored.
 	for _, bad := range []string{"https://evil.example/", "//evil.example", "/\\evil", "/\tx"} {
 		wantRedirect(t, e.signIn("sub-alice", bad), "/")
@@ -451,11 +462,11 @@ func TestLocalSessionLasts96Hours(t *testing.T) {
 	c := newTestServer(t)
 	req, _ := http.NewRequest(http.MethodPost, c.base+"/api/auth/login", strings.NewReader(`{"username":"admin","password":"123456"}`))
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	raw, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = resp.Body.Close()
+	resp := done(raw)
 	for _, ck := range resp.Cookies() {
 		if ck.Name == sessionCookie && ck.MaxAge != 96*3600 {
 			t.Fatalf("MaxAge %d", ck.MaxAge)
