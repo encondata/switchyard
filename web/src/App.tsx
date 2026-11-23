@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, type Alert, type Preview, type User } from './api'
+import {
+  api,
+  ApiError,
+  type Alert,
+  type AuthConfig,
+  type Preview,
+  type User,
+} from './api'
 import { ChangePassword, Login } from './auth'
+import { clearAutoRedirectGuard, maybeAutoRedirect } from './sso'
+import { SignedOut } from './sso-ui'
 import { Changes, History } from './config'
 import { AccessPage } from './access'
 import { MailPage } from './mail'
@@ -33,20 +42,35 @@ function useRoute(): string {
 
 function App() {
   const [user, setUser] = useState<User | null>(null)
+  const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null)
   const [loading, setLoading] = useState(true)
   const [changingPassword, setChangingPassword] = useState(false)
   const [preview, setPreview] = useState<Preview | null>(null)
   const route = useRoute()
 
   useEffect(() => {
+    const config = api.authConfig().catch(() => null)
     api
       .me()
-      .then(setUser)
-      .catch((err: unknown) => {
-        if (!(err instanceof ApiError && err.status === 401)) console.error(err)
+      .then((u) => {
+        clearAutoRedirectGuard()
+        setUser(u)
+        setLoading(false)
+        void config.then(setAuthConfig)
       })
-      .finally(() => setLoading(false))
+      .catch(async (err: unknown) => {
+        if (!(err instanceof ApiError && err.status === 401)) console.error(err)
+        const c = await config
+        setAuthConfig(c)
+        // Auto-redirect: stay on "Loading…" while the browser leaves for HackSpaceLabs.
+        if (!maybeAutoRedirect(c)) setLoading(false)
+      })
   }, [])
+
+  const signedIn = (u: User) => {
+    clearAutoRedirectGuard()
+    setUser(u)
+  }
 
   useEffect(() => {
     const out = () => setUser(null)
@@ -95,7 +119,12 @@ function App() {
   const alerts = (allAlerts ?? []).filter((a) => !a.resolved_at)
 
   async function signOut() {
-    await api.logout().catch(() => undefined)
+    const r = await api.logout().catch(() => undefined)
+    if (r?.redirect) {
+      // A HackSpaceLabs session: end it at Keycloak too, which signs out every app.
+      location.assign(r.redirect)
+      return
+    }
     applyAccent('')
     setUser(null)
     setChangingPassword(false)
@@ -105,7 +134,8 @@ function App() {
 
   let body
   if (loading) body = <p>Loading…</p>
-  else if (!user) body = <Login onSignedIn={setUser} />
+  else if (!user && location.pathname === '/signed-out') body = <SignedOut />
+  else if (!user) body = <Login onSignedIn={signedIn} config={authConfig} />
   else if (user.must_change_password || changingPassword)
     body = (
       <ChangePassword

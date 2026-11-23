@@ -161,6 +161,12 @@ export function UsersPage({ me }: { me: User }) {
                       <td>
                         {u.username}{' '}
                         {self && <span className="hint">(you)</span>}
+                        {u.auth_source === 'oidc' && (
+                          <div className="hint">
+                            HackSpaceLabs account
+                            {u.display_name ? ` · ${u.display_name}` : ''}
+                          </div>
+                        )}
                         {u.must_change_password && (
                           <div className="hint">must change password</div>
                         )}
@@ -218,13 +224,15 @@ export function UsersPage({ me }: { me: User }) {
                             >
                               {u.disabled ? 'Enable' : 'Disable'}
                             </button>
-                            <button
-                              className="link"
-                              onClick={() => resetPassword(u)}
-                            >
-                              Reset password
-                            </button>
-                            {u.totp_enabled && (
+                            {u.auth_source !== 'oidc' && (
+                              <button
+                                className="link"
+                                onClick={() => resetPassword(u)}
+                              >
+                                Reset password
+                              </button>
+                            )}
+                            {u.totp_enabled && u.auth_source !== 'oidc' && (
                               <button
                                 className="link"
                                 onClick={() => {

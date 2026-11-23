@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/encondata/switchyard/internal/apply"
@@ -58,6 +59,8 @@ type Options struct {
 	Bans BanPusher
 	// UniFi keeps the ban list in a UniFi firewall (optional).
 	UniFi *unifi.Syncer
+	// SSO is Sign in with HackSpaceLabs (its Client is nil when that isn't configured).
+	SSO SSOOptions
 }
 
 type srv struct {
@@ -81,6 +84,8 @@ type srv struct {
 	topCache     topCache
 	bans         BanPusher
 	unifi        *unifi.Syncer
+	sso          SSOOptions
+	rechecks     sync.Map // sessions being rechecked with Keycloak right now
 }
 
 // New returns the root HTTP handler.
@@ -104,6 +109,7 @@ func New(opts Options) http.Handler {
 		hits:          opts.Hits,
 		bans:          opts.Bans,
 		unifi:         opts.UniFi,
+		sso:           opts.SSO,
 		ipFailures:    ratelimit.New(10, 15*time.Minute),
 		userFailures:  ratelimit.New(5, 15*time.Minute),
 	}

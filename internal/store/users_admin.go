@@ -46,8 +46,8 @@ func CheckPassword(pw string) string {
 
 // ListUsers returns every user.
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, username, role, must_change_password, disabled, totp_enabled, created_at
-		FROM users ORDER BY username COLLATE NOCASE`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, username, role, must_change_password, disabled, totp_enabled, created_at,
+		auth_source, display_name, email FROM users ORDER BY username COLLATE NOCASE`)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,8 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	out := []User{}
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &u.MustChangePassword, &u.Disabled, &u.TOTPEnabled, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.Role, &u.MustChangePassword, &u.Disabled, &u.TOTPEnabled, &u.CreatedAt,
+			&u.AuthSource, &u.DisplayName, &u.Email); err != nil {
 			return nil, err
 		}
 		out = append(out, u)
@@ -66,8 +67,9 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 // GetUser returns one user.
 func (s *Store) GetUser(ctx context.Context, id int64) (User, error) {
 	var u User
-	err := s.db.QueryRowContext(ctx, `SELECT id, username, role, must_change_password, disabled, totp_enabled, created_at
-		FROM users WHERE id = ?`, id).Scan(&u.ID, &u.Username, &u.Role, &u.MustChangePassword, &u.Disabled, &u.TOTPEnabled, &u.CreatedAt)
+	err := s.db.QueryRowContext(ctx, `SELECT id, username, role, must_change_password, disabled, totp_enabled, created_at,
+		auth_source, display_name, email FROM users WHERE id = ?`, id).Scan(&u.ID, &u.Username, &u.Role, &u.MustChangePassword,
+		&u.Disabled, &u.TOTPEnabled, &u.CreatedAt, &u.AuthSource, &u.DisplayName, &u.Email)
 	if errors.Is(err, sql.ErrNoRows) {
 		return u, ErrNotFound
 	}
@@ -169,6 +171,11 @@ func (s *Store) UpdateUser(ctx context.Context, id int64, role string, disabled 
 // ResetPassword sets a temporary password the user must change, and signs
 // them out everywhere.
 func (s *Store) ResetPassword(ctx context.Context, id int64, password, by string) error {
+	if u, err := s.GetUser(ctx, id); err != nil {
+		return err
+	} else if u.AuthSource == AuthOIDC {
+		return ConflictError("This account signs in with HackSpaceLabs, so it has no password here.")
+	}
 	if msg := CheckPassword(password); msg != "" {
 		return ValidationError{"password": msg}
 	}

@@ -38,6 +38,11 @@ type User struct {
 	// required and this user hasn't set it up yet.
 	MustEnroll2FA bool      `json:"must_enroll_2fa"`
 	CreatedAt     time.Time `json:"created_at,omitempty"`
+	// AuthSource is "local" (username and password) or "oidc" (made by Sign in with HackSpaceLabs;
+	// signs in only that way).
+	AuthSource  string `json:"auth_source"`
+	DisplayName string `json:"display_name,omitempty"`
+	Email       string `json:"email,omitempty"`
 }
 
 // dummyHash is compared against when a username doesn't exist, so a login
@@ -69,14 +74,19 @@ func (s *Store) Authenticate(ctx context.Context, username, password string) (Us
 	var u User
 	var hash string
 	err := s.db.QueryRowContext(ctx,
-		`SELECT id, username, role, must_change_password, disabled, totp_enabled, password_hash FROM users WHERE username = ?`,
-		username).Scan(&u.ID, &u.Username, &u.Role, &u.MustChangePassword, &u.Disabled, &u.TOTPEnabled, &hash)
+		`SELECT id, username, role, must_change_password, disabled, totp_enabled, auth_source, password_hash FROM users WHERE username = ?`,
+		username).Scan(&u.ID, &u.Username, &u.Role, &u.MustChangePassword, &u.Disabled, &u.TOTPEnabled, &u.AuthSource, &hash)
 	if errors.Is(err, sql.ErrNoRows) {
 		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 		return User{}, ErrBadCredentials
 	}
 	if err != nil {
 		return User{}, err
+	}
+	if u.AuthSource == AuthOIDC {
+		// Signs in with HackSpaceLabs only. Take as long as a wrong password would.
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+		return User{}, ErrBadCredentials
 	}
 	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil || u.Disabled {
 		return User{}, ErrBadCredentials
@@ -136,15 +146,7 @@ func (s *Store) CreateSession(ctx context.Context, userID int64, ttl time.Durati
 
 // SessionUser returns the user for a valid, unexpired session token.
 func (s *Store) SessionUser(ctx context.Context, token string) (User, error) {
-	var u User
-	err := s.db.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, u.must_change_password, u.totp_enabled
-		FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = ? AND s.expires_at > ? AND u.disabled = 0`,
-		hashToken(token), time.Now().UTC()).Scan(&u.ID, &u.Username, &u.Role, &u.MustChangePassword, &u.TOTPEnabled)
-	if errors.Is(err, sql.ErrNoRows) {
-		return User{}, ErrNotFound
-	}
+	u, _, err := s.SessionInfo(ctx, token)
 	return u, err
 }
 
@@ -156,7 +158,11 @@ func (s *Store) DeleteSession(ctx context.Context, token string) error {
 
 // DeleteExpiredSessions removes sessions past their expiry.
 func (s *Store) DeleteExpiredSessions(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, time.Now().UTC())
+	now := time.Now().UTC()
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= ?`, now); err != nil {
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM oidc_flows WHERE expires_at <= ?`, now)
 	return err
 }
 

@@ -17,7 +17,7 @@ import (
 
 const (
 	sessionCookie = "cpm_session"
-	sessionTTL    = 12 * time.Hour
+	sessionTTL    = 96 * time.Hour // username-and-password sessions; HackSpaceLabs ones follow Keycloak
 	minPassword   = 8
 	maxPassword   = 72 // bcrypt only uses the first 72 bytes
 )
@@ -34,6 +34,8 @@ func userFrom(r *http.Request) store.User {
 // requireUser rejects requests without a valid session. Unless allowPending
 // is set, it also rejects users who still have to change their password, so
 // the default admin/123456 account can do nothing else until it's changed.
+// Sessions started with HackSpaceLabs are rechecked with Keycloak when due,
+// and skip those local-account steps (their password and 2FA live in Keycloak).
 func (s *srv) requireUser(allowPending bool, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		c, err := r.Cookie(sessionCookie)
@@ -41,14 +43,22 @@ func (s *srv) requireUser(allowPending bool, next http.HandlerFunc) http.Handler
 			writeError(w, http.StatusUnauthorized, "not_signed_in", "Sign in first.")
 			return
 		}
-		u, err := s.store.SessionUser(r.Context(), c.Value)
-		if errors.Is(err, store.ErrNotFound) {
+		u, ss, err := s.store.SessionInfo(r.Context(), c.Value)
+		if err == nil && ss.AuthSource == store.AuthOIDC {
+			u, err = s.recheck(r.Context(), c.Value, u, ss)
+		}
+		if errors.Is(err, store.ErrNotFound) || errors.Is(err, errSessionEnded) {
 			s.clearSessionCookie(w)
 			writeError(w, http.StatusUnauthorized, "not_signed_in", "Your session has ended. Sign in again.")
 			return
 		}
 		if err != nil {
 			s.internalError(w, err)
+			return
+		}
+		if ss.AuthSource == store.AuthOIDC {
+			u.MustChangePassword = false
+			next(w, r.WithContext(context.WithValue(r.Context(), userKey, u)))
 			return
 		}
 		u.MustEnroll2FA = !u.TOTPEnabled && s.require2FA(r)
@@ -193,16 +203,7 @@ func (s *srv) startSession(w http.ResponseWriter, r *http.Request, u store.User)
 		s.internalError(w, err)
 		return
 	}
-	//nolint:gosec // Secure is set from CPM_SECURE_COOKIES; off for plain-HTTP LAN access.
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookie,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   int(sessionTTL.Seconds()),
-		HttpOnly: true,
-		Secure:   s.secureCookies,
-		SameSite: http.SameSiteStrictMode,
-	})
+	s.setSessionCookie(w, token, sessionTTL)
 	s.userFailures.Reset(userLimitKey(u.Username))
 	s.log.Info("signed in", "username", u.Username, "remote", r.RemoteAddr)
 	_ = s.store.AuditEvent(r.Context(), u.Username, "sign_in", "session", u.ID, map[string]string{"ip": clientIP(r)})
@@ -215,14 +216,39 @@ func (s *srv) require2FA(r *http.Request) bool {
 	return v == "true"
 }
 
+func (s *srv) setSessionCookie(w http.ResponseWriter, token string, ttl time.Duration) {
+	//nolint:gosec // Secure is set from CPM_SECURE_COOKIES; off for plain-HTTP LAN access.
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   int(ttl.Seconds()),
+		HttpOnly: true,
+		Secure:   s.secureCookies,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
+// handleLogout ends the session. A HackSpaceLabs session also has to end at
+// Keycloak (which signs the person out of every app), so its answer is
+// {"redirect": <Keycloak's sign-out address>} for the browser to follow;
+// other sessions get 204 as before.
 func (s *srv) handleLogout(w http.ResponseWriter, r *http.Request) {
+	redirect := ""
 	if c, err := r.Cookie(sessionCookie); err == nil {
+		if _, ss, err := s.store.SessionInfo(r.Context(), c.Value); err == nil && ss.AuthSource == store.AuthOIDC {
+			redirect = s.endSessionRedirect(r.Context(), ss)
+		}
 		if err := s.store.DeleteSession(r.Context(), c.Value); err != nil {
 			s.internalError(w, err)
 			return
 		}
 	}
 	s.clearSessionCookie(w)
+	if redirect != "" {
+		writeJSON(w, http.StatusOK, map[string]string{"redirect": redirect})
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

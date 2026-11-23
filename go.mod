@@ -3,11 +3,14 @@ module github.com/encondata/switchyard
 go 1.27.3
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/maxmind/mmdbwriter v1.2.0
 	github.com/oschwald/maxminddb-golang/v2 v2.9.0
 	github.com/pmezard/go-difflib v1.0.0
 	golang.org/x/crypto v0.58.0
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/text v0.43.0
 	modernc.org/sqlite v1.62.0
 )
