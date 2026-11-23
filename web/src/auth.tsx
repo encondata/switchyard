@@ -104,7 +104,7 @@ export function Login({
           <SsoButton />
           {errorCode === 'no_access' && (
             <a
-              className="link"
+              className="text-link"
               href="/api/auth/oidc/login?prompt=login&next=%2F"
             >
               Use a different HackSpaceLabs account
