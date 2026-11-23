@@ -8,6 +8,7 @@ import (
 	"flag"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -22,6 +23,7 @@ import (
 	"github.com/encondata/switchyard/internal/geoip"
 	"github.com/encondata/switchyard/internal/hits"
 	"github.com/encondata/switchyard/internal/honeypot"
+	"github.com/encondata/switchyard/internal/hslsso"
 	"github.com/encondata/switchyard/internal/monitor"
 	"github.com/encondata/switchyard/internal/secrets"
 	"github.com/encondata/switchyard/internal/server"
@@ -210,6 +212,8 @@ func main() {
 		go mon.Run(ctx)
 	}
 
+	sso := ssoOptions(ctx, logger, st, box, *secureCookies)
+
 	srv := &http.Server{
 		Addr: *listen,
 		Handler: server.New(server.Options{
@@ -217,6 +221,7 @@ func main() {
 			Store: st, Caddy: caddy, SecureCookies: *secureCookies,
 			Apply: applier, CaddyDataDir: envOr("CPM_CADDY_DATA_DIR", "/caddy-data"), Box: box,
 			Monitor: mon, DataDir: *dataDir, Restart: stop, GeoIP: geo, Hits: hitsDB, Bans: scorer, UniFi: unifiSync,
+			SSO: sso,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -273,6 +278,75 @@ func splitList(v string) []string {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}
+	}
+	return out
+}
+
+// ssoOptions reads Sign in with HackSpaceLabs settings (PLAN.md 5.1 in encondata/hsl-suite). It is on
+// only when the issuer, client secret, CPM_PUBLIC_URL and CPM_SECRET_KEY are all set; with some but not
+// all of them, it logs what is missing and stays off. It never contacts Keycloak here.
+func ssoOptions(ctx context.Context, logger *slog.Logger, st *store.Store, box *secrets.Box, secureCookies bool) server.SSOOptions {
+	publicURL := strings.TrimRight(os.Getenv("CPM_PUBLIC_URL"), "/")
+	opts := server.SSOOptions{
+		PublicURL:    publicURL,
+		AutoRedirect: os.Getenv("HSL_OIDC_AUTO_REDIRECT") == "true",
+		PortalURL:    strings.TrimRight(os.Getenv("HSL_PORTAL_URL"), "/"),
+		Apps:         suiteApps(os.Getenv("HSL_SUITE_APPS")),
+	}
+	if n, err := strconv.Atoi(os.Getenv("HSL_OIDC_RECHECK_SECONDS")); err == nil && n > 0 {
+		opts.RecheckEvery = time.Duration(n) * time.Second
+	}
+	issuer, secret := os.Getenv("HSL_OIDC_ISSUER"), os.Getenv("HSL_OIDC_CLIENT_SECRET")
+	if strings.HasPrefix(publicURL, "https://") && !secureCookies {
+		logger.Warn("CPM_PUBLIC_URL is https but CPM_SECURE_COOKIES isn't true; set it so session cookies are Secure")
+	}
+	if issuer == "" && secret == "" {
+		return opts
+	}
+	var missing []string
+	for name, v := range map[string]bool{"HSL_OIDC_ISSUER": issuer != "", "HSL_OIDC_CLIENT_SECRET": secret != "",
+		"CPM_PUBLIC_URL": publicURL != "", "CPM_SECRET_KEY": box.Ready()} {
+		if !v {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) > 0 {
+		logger.Error("HackSpaceLabs sign-in is off: settings missing", "missing", strings.Join(missing, ", "))
+		return opts
+	}
+	client, err := hslsso.New(hslsso.Config{
+		Issuer:       issuer,
+		ClientID:     envOr("HSL_OIDC_CLIENT_ID", "switchyard"),
+		ClientSecret: secret,
+		RedirectURL:  publicURL + "/api/auth/oidc/callback",
+		InternalURL:  os.Getenv("HSL_OIDC_INTERNAL_URL"),
+	})
+	if err != nil {
+		logger.Error("HackSpaceLabs sign-in is off: bad settings", "err", err)
+		return opts
+	}
+	opts.Client = client
+	logger.Info("HackSpaceLabs sign-in is on", "issuer", issuer, "public_url", publicURL, "auto_redirect", opts.AutoRedirect)
+	if names, err := st.LocalAccountsWithFirstPassword(ctx); err == nil && len(names) > 0 {
+		logger.Warn("local accounts still have a temporary or first password; sign in and change it, or remove them",
+			"accounts", strings.Join(names, ", "))
+	}
+	return opts
+}
+
+// suiteApps parses HSL_SUITE_APPS: "id|name|url" entries separated by commas.
+func suiteApps(v string) []server.SuiteApp {
+	var out []server.SuiteApp
+	for _, entry := range splitList(v) {
+		parts := strings.SplitN(entry, "|", 3)
+		if len(parts) != 3 {
+			continue
+		}
+		u, err := url.Parse(parts[2])
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			continue
+		}
+		out = append(out, server.SuiteApp{ID: parts[0], Name: parts[1], URL: parts[2]})
 	}
 	return out
 }
