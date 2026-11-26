@@ -54,32 +54,36 @@ export function Login({
 
   if (challenge)
     return (
-      <form className="card narrow" onSubmit={submit}>
-        <h1>Two-factor sign-in</h1>
-        <label>
-          Code from your authenticator app
-          <input
-            className="mono code-input"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            autoFocus
-            required
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-          <span className="hint">
-            Lost your phone? Enter one of your backup codes.
-          </span>
-        </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <button disabled={busy}>{busy ? 'Checking…' : 'Sign in'}</button>
+      <>
+        <h1 className="hsl-auth-title">Two-factor sign-in</h1>
+        <form className="hsl-auth-form" onSubmit={submit}>
+          <label className="hsl-auth-field">
+            Code from your authenticator app
+            <input
+              className="hsl-auth-input mono code-input"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+            />
+            <span className="hint">
+              Lost your phone? Enter one of your backup codes.
+            </span>
+          </label>
+          {error && (
+            <p className="hsl-auth-alert" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="hsl-auth-button is-primary" disabled={busy}>
+            {busy ? 'Checking…' : 'Sign in'}
+          </button>
+        </form>
         <button
           type="button"
-          className="link"
+          className="hsl-auth-link"
           onClick={() => {
             setChallenge(null)
             setCode('')
@@ -88,14 +92,14 @@ export function Login({
         >
           Back
         </button>
-      </form>
+      </>
     )
 
   return (
-    <form className="card narrow" onSubmit={submit}>
-      <h1>Sign in</h1>
+    <>
+      <h1 className="hsl-auth-title">Sign in</h1>
       {errorCode && (
-        <p className="error" role="alert">
+        <p className="hsl-auth-alert" role="alert">
           {ssoError(errorCode)}
         </p>
       )}
@@ -104,7 +108,7 @@ export function Login({
           <SsoButton />
           {errorCode === 'no_access' && (
             <a
-              className="text-link"
+              className="hsl-auth-link"
               href="/api/auth/oidc/login?prompt=login&next=%2F"
             >
               Use a different HackSpaceLabs account
@@ -115,33 +119,35 @@ export function Login({
       {sso && !showLocal && (
         <button
           type="button"
-          className="link"
+          className="hsl-auth-link"
           onClick={() => setShowLocal(true)}
         >
           Use a local account
         </button>
       )}
       {sso && showLocal && (
-        <div className="divider">or with a local account</div>
+        <div className="hsl-auth-divider">or with a local account</div>
       )}
       {showLocal && (
-        <LocalFields
-          username={username}
-          password={password}
-          setUsername={setUsername}
-          setPassword={setPassword}
-          autoFocus={!sso}
-        />
+        <form className="hsl-auth-form" onSubmit={submit}>
+          <LocalFields
+            username={username}
+            password={password}
+            setUsername={setUsername}
+            setPassword={setPassword}
+            autoFocus={!sso}
+          />
+          {error && (
+            <p className="hsl-auth-alert" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="hsl-auth-button is-primary" disabled={busy}>
+            {busy ? 'Signing in…' : 'Sign in'}
+          </button>
+        </form>
       )}
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      {showLocal && (
-        <button disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-      )}
-    </form>
+    </>
   )
 }
 
@@ -154,9 +160,10 @@ function LocalFields(p: {
 }) {
   return (
     <>
-      <label>
+      <label className="hsl-auth-field">
         Username
         <input
+          className="hsl-auth-input"
           autoComplete="username"
           autoFocus={p.autoFocus}
           required
@@ -164,9 +171,10 @@ function LocalFields(p: {
           onChange={(e) => p.setUsername(e.target.value)}
         />
       </label>
-      <label>
+      <label className="hsl-auth-field">
         Password
         <input
+          className="hsl-auth-input"
           type="password"
           autoComplete="current-password"
           required
@@ -211,60 +219,67 @@ export function ChangePassword({
   }
 
   return (
-    <form className="card narrow" onSubmit={submit}>
-      <h1>Change password</h1>
+    <>
+      <h1 className="hsl-auth-title">Change password</h1>
       {user.must_change_password && (
-        <p className="notice">
+        <p className="hsl-auth-alert is-warn">
           You signed in with the default password. Choose a new one to continue.
         </p>
       )}
-      <input type="hidden" autoComplete="username" value={user.username} />
-      <label>
-        Current password
-        <input
-          type="password"
-          autoComplete="current-password"
-          autoFocus
-          required
-          value={current}
-          onChange={(e) => setCurrent(e.target.value)}
-        />
-      </label>
-      <label>
-        New password <span className="hint">(at least 8 characters)</span>
-        <input
-          type="password"
-          autoComplete="new-password"
-          required
-          minLength={8}
-          maxLength={72}
-          value={next}
-          onChange={(e) => setNext(e.target.value)}
-        />
-      </label>
-      <label>
-        Confirm new password
-        <input
-          type="password"
-          autoComplete="new-password"
-          required
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-        />
-      </label>
-      {error && (
-        <p className="error" role="alert">
-          {error}
-        </p>
-      )}
-      <div className="actions">
-        <button disabled={busy}>{busy ? 'Saving…' : 'Change password'}</button>
+      <form className="hsl-auth-form" onSubmit={submit}>
+        <input type="hidden" autoComplete="username" value={user.username} />
+        <label className="hsl-auth-field">
+          Current password
+          <input
+            className="hsl-auth-input"
+            type="password"
+            autoComplete="current-password"
+            autoFocus
+            required
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+          />
+        </label>
+        <label className="hsl-auth-field">
+          <span>
+            New password <span className="hint">(at least 8 characters)</span>
+          </span>
+          <input
+            className="hsl-auth-input"
+            type="password"
+            autoComplete="new-password"
+            required
+            minLength={8}
+            maxLength={72}
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+          />
+        </label>
+        <label className="hsl-auth-field">
+          Confirm new password
+          <input
+            className="hsl-auth-input"
+            type="password"
+            autoComplete="new-password"
+            required
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value)}
+          />
+        </label>
+        {error && (
+          <p className="hsl-auth-alert" role="alert">
+            {error}
+          </p>
+        )}
+        <button className="hsl-auth-button is-primary" disabled={busy}>
+          {busy ? 'Saving…' : 'Change password'}
+        </button>
         {onCancel && (
-          <button type="button" className="secondary" onClick={onCancel}>
+          <button type="button" className="hsl-auth-button" onClick={onCancel}>
             Cancel
           </button>
         )}
-      </div>
-    </form>
+      </form>
+    </>
   )
 }

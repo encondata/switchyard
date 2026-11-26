@@ -23,7 +23,7 @@ import { HoneypotPage } from './honeypot'
 import { ApiDocsPage, ApiKeysPage } from './apikeys'
 import { ConnectionsPage } from './connections'
 import { WildcardCard } from './wildcards'
-import { Logo, Sidebar, Topbar } from './shell'
+import { Mark, Sidebar, Topbar } from './shell'
 import { ArrowRight, TriangleAlert } from 'lucide-react'
 import { applyAccent } from './accent'
 import { Toaster } from './notify'
@@ -133,7 +133,7 @@ function App() {
   const canEdit = user?.role === 'admin' || user?.role === 'editor'
 
   let body
-  if (loading) body = <p>Loading…</p>
+  if (loading) body = <p className="hsl-auth-text">Loading…</p>
   else if (!user && location.pathname === '/signed-out') body = <SignedOut />
   else if (!user) body = <Login onSignedIn={signedIn} config={authConfig} />
   else if (user.must_change_password || changingPassword)
@@ -256,63 +256,80 @@ function App() {
       />
     )
 
-  // Before sign-in, password change or 2FA enrollment: a centered page.
+  // Before sign-in, password change or 2FA enrollment: the kit's centred card.
   if (!ready)
     return (
-      <div className="bare">
-        <div className="bare-logo">
-          <Logo />
+      <div className="hsl-auth">
+        <div className="hsl-auth-card">
+          <div className="hsl-auth-brand">
+            <Mark size={44} />
+            <span className="hsl-wordmark">Switchyard</span>
+          </div>
+          {body}
+          {user && (
+            <button type="button" className="hsl-auth-link" onClick={signOut}>
+              Sign out
+            </button>
+          )}
         </div>
-        {body}
-        {user && (
-          <button className="link bare-out" onClick={signOut}>
-            Sign out
-          </button>
-        )}
       </div>
     )
 
   const pending = preview?.pending ? preview.changes : 0
   return (
-    <div className="shell">
-      <Sidebar
-        route={route}
-        user={user}
-        pending={pending}
-        onSignOut={signOut}
-      />
-      <div className="main">
-        <Topbar route={route} alerts={allAlerts} username={user.username} />
-        <main className="content">
-          {alerts.length > 0 && route !== '/health' && (
-            <div className="banner banner-bad" role="alert">
-              <TriangleAlert size={20} aria-hidden="true" />
-              <span>
-                {alerts.length === 1
-                  ? alerts[0].message
-                  : `${alerts.length} alerts need attention.`}
-              </span>
-              <a href="#/health">See health</a>
-            </div>
-          )}
-          {pending > 0 && route !== '/changes' && (
-            <div className="banner banner-warn" role="status">
-              <TriangleAlert size={20} aria-hidden="true" />
-              <span>
-                {preview?.drift
-                  ? 'Caddy is running a config CPM didn’t apply'
-                  : `${pending} ${pending === 1 ? 'change' : 'changes'} ready to deploy`}
-              </span>
-              <a href="#/changes">
-                Review & apply <ArrowRight size={16} aria-hidden="true" />
-              </a>
-            </div>
-          )}
-          {body}
-        </main>
+    <>
+      {/* Hash routing: move focus without touching location.hash. */}
+      <a
+        className="hsl-skip"
+        href="#main"
+        onClick={(e) => {
+          e.preventDefault()
+          document.getElementById('main')?.focus()
+        }}
+      >
+        Skip to content
+      </a>
+      <div className="hsl-shell">
+        <Sidebar route={route} user={user} pending={pending} />
+        <div className="hsl-main">
+          <Topbar
+            route={route}
+            alerts={allAlerts}
+            user={user}
+            config={authConfig}
+            onSignOut={signOut}
+          />
+          <main className="hsl-content" id="main" tabIndex={-1}>
+            {alerts.length > 0 && route !== '/health' && (
+              <div className="banner banner-bad" role="alert">
+                <TriangleAlert size={20} aria-hidden="true" />
+                <span>
+                  {alerts.length === 1
+                    ? alerts[0].message
+                    : `${alerts.length} alerts need attention.`}
+                </span>
+                <a href="#/health">See health</a>
+              </div>
+            )}
+            {pending > 0 && route !== '/changes' && (
+              <div className="banner banner-warn" role="status">
+                <TriangleAlert size={20} aria-hidden="true" />
+                <span>
+                  {preview?.drift
+                    ? 'Caddy is running a config CPM didn’t apply'
+                    : `${pending} ${pending === 1 ? 'change' : 'changes'} ready to deploy`}
+                </span>
+                <a href="#/changes">
+                  Review & apply <ArrowRight size={16} aria-hidden="true" />
+                </a>
+              </div>
+            )}
+            {body}
+          </main>
+        </div>
+        <Toaster />
       </div>
-      <Toaster />
-    </div>
+    </>
   )
 }
 

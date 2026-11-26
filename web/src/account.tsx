@@ -137,12 +137,12 @@ export function TwoFASetup({ onDone }: { onDone: () => void }) {
 /** Shown when an admin requires 2FA and this user hasn't set it up. */
 export function EnrollRequired({ onDone }: { onDone: () => void }) {
   return (
-    <section className="card narrow-wide">
-      <p className="notice">
+    <>
+      <p className="hsl-auth-alert is-warn">
         Your admin requires two-factor sign-in. Set it up to continue.
       </p>
       <TwoFASetup onDone={onDone} />
-    </section>
+    </>
   )
 }
 

@@ -249,6 +249,13 @@ tests/integration/run.sh   # end to end: Caddy + CPM + Pebble in Docker
 For UI work with hot reload, run `make run` and `cd web && npm run dev`;
 Vite proxies `/api` to `:8080`.
 
+The look (tokens, sidebar and top bar, app switcher, user menu, sign-in card,
+the H mark) is the HSL Suite kit shared with the other HackSpaceLabs apps. It
+lives in `web/src/hsl-ui/`, synced from hackspacelabs-web at a release tag:
+`scripts/sync-hsl-ui.sh ui-vX.Y.Z web/src/hsl-ui`. Never edit that copy; CI's
+`scripts/sync-hsl-ui.sh --check web/src/hsl-ui` fails if it drifts.
+`web/src/index.css` holds only Switchyard's own components.
+
 | Path | What |
 |---|---|
 | `cmd/cpm` | Server entry point |

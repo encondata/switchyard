@@ -1,11 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Activity,
   Crosshair,
@@ -15,73 +8,43 @@ import {
   LayoutGrid,
   Layers,
   Lock,
-  LogOut,
   Mail,
-  Moon,
   Plug,
   Search,
   ShieldCheck,
-  Sun,
+  UserCog,
   Users,
   type LucideIcon,
 } from 'lucide-react'
-import { api, type Alert, type HostView, type User } from './api'
+import {
+  api,
+  type Alert,
+  type AuthConfig,
+  type HostView,
+  type User,
+} from './api'
 import { NotificationBell } from './notify'
+import markUrl from './hsl-ui/mark.svg'
 
-/**
- * The Hackspacelabs H: warm bands over cool ones, split by a gap that
- * steps up across the crossbar. Drawn on a 700 × 670 grid (the H spans
- * 35–665 × 45–630).
- */
-const markH =
-  'M95 45H215L255 85V240H445V85L485 45H605L665 105V570L605 630H485L445 590V465H255V590L215 630H95L35 570V105Z'
-// The gap between warm and cool, as a centre line.
-const markGap =
-  'M0 434H168C206 434 206 374 244 374H446C496 374 496 277 546 277H700'
-// [colour, lower edge] from the top band down; navy fills the rest.
-const markBands: [string, string][] = [
-  ['#fbae2c', 'M0 112C150 92 260 138 410 118S610 96 700 100'],
-  ['#ffc760', 'M0 176C150 160 260 196 420 170S620 142 700 142'],
-  ['#fb7d24', 'M0 272C140 256 260 292 400 276S600 226 700 222'],
-  ['#ec2d1d', 'M0 338C150 318 300 352 450 332S620 282 700 277'],
-  ['#d81f27', markGap],
-  ['#74d4ec', 'M0 470C150 456 280 470 420 440S600 352 700 346'],
-  ['#0fb0d6', 'M0 522C160 506 300 520 450 496S620 432 700 422'],
-  ['#0a8dba', 'M0 562C160 546 320 560 460 546S620 502 700 496'],
-]
-
+/** The HackSpaceLabs H, from the HSL Suite kit. Decorative: always next to a name. */
 export function Mark({ size = 34 }: { size?: number }) {
-  const id = 'mark' + useId().replace(/[^a-zA-Z0-9_-]/g, '')
   return (
-    <svg
-      className="mark"
-      viewBox="35 45 630 585"
+    <img
+      className="hsl-mark"
+      src={markUrl}
       width={size}
-      height={(size * 585) / 630}
-      aria-hidden="true"
-    >
-      <mask id={id}>
-        <path d={markH} fill="#fff" />
-        <path d={markGap} fill="none" stroke="#000" strokeWidth="16" />
-      </mask>
-      <g mask={`url(#${id})`}>
-        <rect x="0" y="0" width="700" height="670" fill="#003e65" />
-        {markBands
-          .map(([fill, edge]) => (
-            <path key={fill} d={`${edge}V0H0Z`} fill={fill} />
-          ))
-          .reverse()}
-      </g>
-    </svg>
+      height={Math.round((size * 585) / 630)}
+      alt=""
+    />
   )
 }
 
 /** Mark and wordmark, linking home. */
 export function Logo() {
   return (
-    <a className="logo" href="#/dashboard" aria-label="Switchyard home">
+    <a className="hsl-brand" href="#/dashboard" aria-label="Switchyard home">
       <Mark />
-      <span className="logo-name">Switchyard</span>
+      <span className="hsl-wordmark">Switchyard</span>
     </a>
   )
 }
@@ -98,12 +61,10 @@ export function Sidebar({
   route,
   user,
   pending,
-  onSignOut,
 }: {
   route: string
   user: User
   pending: number
-  onSignOut: () => void
 }) {
   const groups: { title: string; items: NavItem[] }[] = [
     {
@@ -155,27 +116,27 @@ export function Sidebar({
     route === p || route.startsWith(p + '/') || route.startsWith(p + '?')
 
   return (
-    <aside className="sidebar">
+    <aside className="hsl-sidebar">
       <Logo />
-      <nav aria-label="Main">
+      <nav className="hsl-nav" aria-label="Main">
         {groups.map((g) => {
           const items = g.items.filter((i) => !i.admin || isAdmin)
           if (items.length === 0) return null
           return (
-            <div className="nav-group" key={g.title}>
-              <div className="nav-title">{g.title}</div>
+            <div className="hsl-nav-group" key={g.title}>
+              <div className="hsl-nav-label">{g.title}</div>
               {items.map((i) => (
                 <a
                   key={i.path}
                   href={`#${i.path}`}
-                  className={`nav-item${active(i.path) ? ' active' : ''}`}
+                  className="hsl-nav-item"
                   aria-current={active(i.path) ? 'page' : undefined}
                 >
                   <i.icon size={19} strokeWidth={1.8} aria-hidden="true" />
                   <span>{i.label}</span>
                   {!!i.badge && (
                     <span
-                      className="nav-badge"
+                      className="hsl-nav-badge"
                       aria-label={`${i.badge} pending`}
                     >
                       {i.badge}
@@ -187,58 +148,61 @@ export function Sidebar({
           )
         })}
       </nav>
-      <div className="sidebar-foot">
+      {/* Switchyard's own account page: password, two-factor sign-in, accent colour. */}
+      <div className="hsl-sidebar-foot">
         <a
-          className="user-card"
+          className="hsl-nav-item"
           href="#/account"
-          title="Your account and two-factor sign-in"
+          title="Your account, two-factor sign-in and accent colour"
+          aria-current={route === '/account' ? 'page' : undefined}
         >
-          <span className="avatar" aria-hidden="true">
-            {user.username.slice(0, 1).toUpperCase()}
-          </span>
-          <span>
-            <span className="user-name">{user.username}</span>
-            <span className="user-role">
-              {
-                { admin: 'Administrator', editor: 'Editor', viewer: 'Viewer' }[
-                  user.role
-                ]
-              }
-            </span>
-          </span>
+          <UserCog size={19} strokeWidth={1.8} aria-hidden="true" />
+          <span>Account</span>
         </a>
-        <ThemeToggle />
-        <button className="nav-item" onClick={onSignOut}>
-          <LogOut size={19} strokeWidth={1.8} aria-hidden="true" />
-          <span>Sign out</span>
-        </button>
       </div>
     </aside>
   )
 }
 
-/** Light by default; dark only when chosen here (remembered). */
-function ThemeToggle() {
-  const [dark, setDark] = useState(
-    () => document.documentElement.dataset.theme === 'dark',
-  )
-  function toggle() {
-    const next = !dark
-    setDark(next)
-    if (next) document.documentElement.dataset.theme = 'dark'
-    else delete document.documentElement.dataset.theme
-    try {
-      localStorage.setItem('cpm-theme', next ? 'dark' : 'light')
-    } catch {
-      // not saved; applies to this visit only
-    }
-  }
-  const Icon = dark ? Sun : Moon
+const roleNames: Record<User['role'], string> = {
+  admin: 'Administrator',
+  editor: 'Editor',
+  viewer: 'Viewer',
+}
+
+/**
+ * The kit's user menu: name, role, Profile, dark mode, Sign out. Profile is the HackSpaceLabs
+ * portal's /me for HackSpaceLabs accounts, and Switchyard's own account page for local ones.
+ */
+function UserMenu({
+  user,
+  config,
+  onSignOut,
+}: {
+  user: User
+  config: AuthConfig | null
+  onSignOut: () => void
+}) {
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const out = () => onSignOut()
+    el.addEventListener('hsl-signout', out)
+    return () => el.removeEventListener('hsl-signout', out)
+  }, [onSignOut])
+  const hsl = user.auth_source === 'oidc'
+  const profile =
+    hsl && config?.portal_url ? config.portal_url + '/me' : '/#/account'
   return (
-    <button className="nav-item" onClick={toggle}>
-      <Icon size={19} strokeWidth={1.8} aria-hidden="true" />
-      <span>{dark ? 'Light mode' : 'Dark mode'}</span>
-    </button>
+    <hsl-user-menu
+      ref={ref}
+      name={user.display_name || user.username}
+      detail={
+        roleNames[user.role] + (hsl ? ' · signed in with HackSpaceLabs' : '')
+      }
+      profile-url={profile}
+    />
   )
 }
 
@@ -409,11 +373,15 @@ function CaddyStatus() {
 export function Topbar({
   route,
   alerts,
-  username,
+  user,
+  config,
+  onSignOut,
 }: {
   route: string
   alerts: Alert[] | null
-  username: string
+  user: User
+  config: AuthConfig | null
+  onSignOut: () => void
 }) {
   const section = route.split(/[/?]/)[1] || 'dashboard'
   const name = pageNames[section] ?? 'Dashboard'
@@ -423,15 +391,18 @@ export function Topbar({
       ? 'Edit host'
       : null
   return (
-    <header className="topbar">
-      <div className="crumbs">
-        <Mark size={18} />
-        <span>Switchyard</span>
-        <span className="crumb-sep">/</span>
+    <header className="hsl-topbar">
+      <div className="hsl-topbar-title">
+        <a href="#/dashboard">Switchyard</a>
+        <span className="hsl-topbar-sep" aria-hidden="true">
+          /
+        </span>
         {sub ? (
           <>
             <a href={`#/${section}`}>{name}</a>
-            <span className="crumb-sep">/</span>
+            <span className="hsl-topbar-sep" aria-hidden="true">
+              /
+            </span>
             <strong>{sub}</strong>
           </>
         ) : (
@@ -439,8 +410,19 @@ export function Topbar({
         )}
       </div>
       <GlobalSearch />
-      <NotificationBell key={username} alerts={alerts} username={username} />
+      <NotificationBell
+        key={user.username}
+        alerts={alerts}
+        username={user.username}
+      />
       <CaddyStatus />
+      <div className="hsl-topbar-end">
+        <hsl-app-switcher
+          current="switchyard"
+          apps={JSON.stringify(config?.apps ?? [])}
+        />
+        <UserMenu user={user} config={config} onSignOut={onSignOut} />
+      </div>
     </header>
   )
 }
