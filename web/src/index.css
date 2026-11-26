@@ -2259,12 +2259,3 @@ details summary {
 .hsl-topbar .gsearch ~ .hsl-topbar-end {
   margin-left: 0;
 }
-
-/* ---------- Sign-in pages (the kit's .hsl-auth card) ---------- */
-
-/* The global button rules above would paint the kit's text-link buttons on hover. */
-button.hsl-auth-link:hover {
-  border-color: transparent;
-  background: none;
-  color: var(--accent);
-}

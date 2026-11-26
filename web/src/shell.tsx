@@ -199,7 +199,7 @@ function UserMenu({
       ref={ref}
       name={user.display_name || user.username}
       detail={
-        roleNames[user.role] + (hsl ? ' · signed in with HackSpaceLabs' : '')
+        roleNames[user.role] + (hsl ? ' · HackSpaceLabs' : ' · Local account')
       }
       profile-url={profile}
     />
