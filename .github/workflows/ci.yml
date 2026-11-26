@@ -21,6 +21,9 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: HSL Suite kit matches its release
+        working-directory: .
+        run: scripts/sync-hsl-ui.sh --check web/src/hsl-ui
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
