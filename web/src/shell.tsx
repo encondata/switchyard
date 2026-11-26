@@ -199,7 +199,7 @@ function UserMenu({
       ref={ref}
       name={user.display_name || user.username}
       detail={
-        roleNames[user.role] + (hsl ? ' · signed in with HackSpaceLabs' : '')
+        roleNames[user.role] + (hsl ? ' · HackSpaceLabs' : ' · Local account')
       }
       profile-url={profile}
     />
@@ -363,9 +363,15 @@ function CaddyStatus() {
   }, [])
   if (ok === null) return null
   return (
-    <a href="#/health" className={`caddy-status ${ok ? 'up' : 'down'}`}>
+    <a
+      href="#/health"
+      className={`caddy-status ${ok ? 'up' : 'down'}`}
+      title={ok ? 'Caddy online' : 'Caddy unreachable'}
+    >
       <span className="status-dot" aria-hidden="true" />
-      {ok ? 'Caddy online' : 'Caddy unreachable'}
+      <span className="caddy-status-label">
+        {ok ? 'Caddy online' : 'Caddy unreachable'}
+      </span>
     </a>
   )
 }

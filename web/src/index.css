@@ -240,6 +240,10 @@ textarea {
   color: var(--text);
 }
 
+select {
+  max-width: 100%;
+}
+
 input:focus,
 select:focus,
 textarea:focus {
@@ -502,6 +506,7 @@ code {
 }
 
 fieldset {
+  min-width: 0;
   margin: 0;
   padding: 0.9rem 1rem 1rem;
   border: 1px solid var(--border);
@@ -1074,7 +1079,7 @@ table.top th {
 
 .top-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: 1rem;
 }
 
@@ -1358,7 +1363,7 @@ details summary {
 }
 
 @media (max-width: 900px) {
-  /* The top bar wraps: title and menus, then the bell and status, then search. */
+  /* The top bar takes two rows: title, bell, status and menus, then search. */
   .hsl-topbar {
     height: auto;
     flex-wrap: wrap;
@@ -1366,13 +1371,14 @@ details summary {
     padding: 0.75rem 1rem;
   }
   .hsl-topbar-title {
-    flex: 1 1 auto;
-  }
-  .hsl-topbar-end {
-    order: 1;
+    flex: 1 1 0;
+    overflow: hidden;
   }
   .hsl-topbar .bell,
   .hsl-topbar .caddy-status {
+    order: 1;
+  }
+  .hsl-topbar-end {
     order: 2;
   }
   .gsearch {
@@ -1395,7 +1401,104 @@ details summary {
   }
   .upstream,
   .header-row {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .upstream > *,
+  .header-row > * {
+    min-width: 0;
+  }
+  /* On a phone the sidebar strip names the app, so the top bar starts at the page. */
+  .hsl-topbar-title > a:first-child,
+  .hsl-topbar-title > a:first-child + .hsl-topbar-sep {
+    display: none;
+  }
+  .hsl-topbar {
+    column-gap: 0.5rem;
+  }
+  /* Caddy's state shows as the dot alone; the words stay for screen readers. */
+  .caddy-status {
+    position: relative;
+    padding: 0.55rem;
+  }
+  .caddy-status-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* Users: each person is a small block instead of a row wider than the phone. Name and role on the
+     first line, 2FA and status under the name, the actions below. The header row stays for screen
+     readers. */
+  table.users thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  table.users,
+  table.users tbody {
+    display: block;
+  }
+  table.users tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      'user user role'
+      'tfa status role'
+      'actions actions actions';
+    gap: 0.3rem 0.75rem;
+    padding: 0.8rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  table.users tbody tr:last-child {
+    border-bottom: 0;
+  }
+  table.users td {
+    padding: 0;
+    border: 0;
+  }
+  table.users .user-name {
+    grid-area: user;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  table.users .user-role {
+    grid-area: role;
+  }
+  table.users .user-2fa {
+    grid-area: tfa;
+  }
+  table.users .user-2fa::before {
+    content: '2FA ';
+    color: var(--muted);
+  }
+  table.users .user-status {
+    grid-area: status;
+  }
+  table.users .user-actions {
+    grid-area: actions;
+  }
+  table.users .user-actions:empty {
+    display: none;
+  }
+  table.users .row-actions {
+    flex-wrap: wrap;
+    row-gap: 0.35rem;
+  }
+  /* Trap paths fit the card: paths wrap and the cells pack closer. */
+  table.traps th,
+  table.traps td {
+    padding-inline: 0.35rem;
+  }
+  table.traps td.mono {
+    overflow-wrap: anywhere;
+  }
+  table.traps .small-num {
+    width: 4rem;
   }
   .page-header h1 {
     font-size: 1.45rem;
@@ -2258,13 +2361,4 @@ details summary {
 /* At full width the search, bell and status sit together, next to the menus. */
 .hsl-topbar .gsearch ~ .hsl-topbar-end {
   margin-left: 0;
-}
-
-/* ---------- Sign-in pages (the kit's .hsl-auth card) ---------- */
-
-/* The global button rules above would paint the kit's text-link buttons on hover. */
-button.hsl-auth-link:hover {
-  border-color: transparent;
-  background: none;
-  color: var(--accent);
 }

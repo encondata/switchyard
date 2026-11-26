@@ -409,7 +409,7 @@ export function HoneypotPage({
           paths, add it to that host’s exceptions (host editor → Advanced).
         </p>
         <div className="table-wrap">
-          <table>
+          <table className="traps">
             <thead>
               <tr>
                 <th>Path</th>

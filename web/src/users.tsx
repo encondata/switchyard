@@ -143,7 +143,7 @@ export function UsersPage({ me }: { me: User }) {
         )}
         {users && (
           <div className="table-wrap">
-            <table>
+            <table className="users">
               <thead>
                 <tr>
                   <th>User</th>
@@ -158,7 +158,7 @@ export function UsersPage({ me }: { me: User }) {
                   const self = u.id === me.id
                   return (
                     <tr key={u.id} className={u.disabled ? 'disabled' : ''}>
-                      <td>
+                      <td className="user-name">
                         {u.username}{' '}
                         {self && <span className="hint">(you)</span>}
                         {u.auth_source === 'oidc' && (
@@ -171,7 +171,7 @@ export function UsersPage({ me }: { me: User }) {
                           <div className="hint">must change password</div>
                         )}
                       </td>
-                      <td>
+                      <td className="user-role">
                         <select
                           aria-label={`Role of ${u.username}`}
                           value={u.role}
@@ -195,21 +195,21 @@ export function UsersPage({ me }: { me: User }) {
                           ))}
                         </select>
                       </td>
-                      <td>
+                      <td className="user-2fa">
                         {u.totp_enabled ? (
                           <span className="ok">On</span>
                         ) : (
                           'Off'
                         )}
                       </td>
-                      <td>
+                      <td className="user-status">
                         {u.disabled ? (
                           <span className="bad">Disabled</span>
                         ) : (
                           'Active'
                         )}
                       </td>
-                      <td>
+                      <td className="user-actions">
                         {!self && (
                           <div className="row-actions">
                             <button
