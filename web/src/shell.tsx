@@ -164,19 +164,6 @@ export function Sidebar({
   )
 }
 
-/**
- * The kit's app switcher (hides itself with no apps). `apps` is set as an attribute by hand: React 19
- * would assign it as a property, which replaces the element's own apps() method.
- */
-function AppSwitcher({ apps }: { apps: AuthConfig['apps'] }) {
-  const ref = useRef<HTMLElement>(null)
-  const json = JSON.stringify(apps)
-  useEffect(() => {
-    ref.current?.setAttribute('apps', json)
-  }, [json])
-  return <hsl-app-switcher ref={ref} current="switchyard" />
-}
-
 const roleNames: Record<User['role'], string> = {
   admin: 'Administrator',
   editor: 'Editor',
@@ -430,7 +417,10 @@ export function Topbar({
       />
       <CaddyStatus />
       <div className="hsl-topbar-end">
-        <AppSwitcher apps={config?.apps ?? []} />
+        <hsl-app-switcher
+          current="switchyard"
+          apps={JSON.stringify(config?.apps ?? [])}
+        />
         <UserMenu user={user} config={config} onSignOut={onSignOut} />
       </div>
     </header>
